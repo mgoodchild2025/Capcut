@@ -89,7 +89,10 @@ export function keyframeValue(kfs: Keyframe[] | undefined, local: number, base: 
   for (let i = 1; i < kfs.length; i++) {
     const a = kfs[i - 1];
     const b = kfs[i];
-    if (local <= b.t) return a.v + (b.v - a.v) * ease((local - a.t) / Math.max(1e-6, b.t - a.t));
+    if (local <= b.t) {
+      const k = (local - a.t) / Math.max(1e-6, b.t - a.t);
+      return a.v + (b.v - a.v) * (a.ease === 'linear' ? k : ease(k));
+    }
   }
   return kfs[kfs.length - 1].v;
 }

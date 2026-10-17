@@ -4,7 +4,8 @@ import { appendToMain, clipEnd, getMainTrack, placeClip } from '../model/ops';
 import { CURVE_PRESETS, durationForSpan } from '../model/timing';
 import type { Asset, Clip, Project, TransitionKind } from '../model/types';
 import { uid } from '../utils';
-import { barFitter, IMPACT, SANS, text, upper } from './shared';
+import { appendFinalScore, decorate } from './match';
+import { barFitter, follow, IMPACT, SANS, text, upper } from './shared';
 import { buildLineupReel, buildSpotlightReel, buildTeamReel } from './teamReels';
 
 export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'team' | 'lineup';
@@ -110,9 +111,15 @@ export interface ReelInfo {
   stats: [string, string][];
   /** Spotlight title, e.g. "Player of the Game". */
   headline: string;
-  /** Tonight's opponent, for the starting lineup. */
+  /** Opponent: the starting lineup's "vs", and the score bug. */
   opponent: string;
   roster: RosterPlayer[];
+  /** Set scores as typed, [ours, theirs]. */
+  sets: [string, string][];
+  /** Team logo as a PNG data URL (remembered between projects). */
+  logo?: string;
+  /** Show the logo in a corner during the plays. */
+  badge: boolean;
 }
 
 export interface ReelClip {
@@ -124,6 +131,11 @@ export interface ReelClip {
   spotlight?: { x: number; y: number };
   /** Roster key of the player who made the play (team reels). */
   player?: string;
+  /** Score after the rally, e.g. "18-21", and which set. */
+  score?: string;
+  set?: number;
+  /** Where the action is over time (source seconds, 0..1 across the frame), from auto-follow. */
+  track?: { t: number; x: number }[];
 }
 
 export interface ReelAssets {
@@ -138,6 +150,9 @@ export interface ReelAssets {
   roster?: string;
   /** Jersey-number cards by roster key, for players without a photo or clip. */
   players?: Record<string, string>;
+  logo?: string;
+  /** Background for the final score card. */
+  final?: string;
 }
 
 export interface ReelInput {
@@ -149,9 +164,12 @@ export interface ReelInput {
 
 /** Lays out a whole highlight reel on a fresh timeline. */
 export function buildReel(input: ReelInput, assets: Record<string, Asset>): Project {
-  if (input.style === 'spotlight') return buildSpotlightReel(input, assets);
-  if (input.style === 'team') return buildTeamReel(input, assets);
-  if (input.style === 'lineup') return buildLineupReel(input, assets);
+  const build = input.style === 'spotlight' ? buildSpotlightReel : input.style === 'team' ? buildTeamReel : input.style === 'lineup' ? buildLineupReel : buildClassicReel;
+  return decorate(build(input, assets), input, assets);
+}
+
+/** Recruiting, hype and season recap. */
+function buildClassicReel(input: ReelInput, assets: Record<string, Asset>): Project {
   const style = REEL_STYLES.find((s) => s.id === input.style)!;
   const [W, H] = style.aspect;
   const portrait = H > W;
@@ -235,12 +253,14 @@ export function buildReel(input: ReelInput, assets: Record<string, Asset>): Proj
       clip.spotlight = { x: rc.spotlight!.x, y: rc.spotlight!.y, r: 0.11, color: c2, label: info.number ? `#${info.number.replace('#', '')}` : upper(name.split(' ')[0]), zoom: true };
     }
     if (portrait && a.kind !== 'audio' && a.width > a.height) {
-      // Vertical reel from landscape footage: fill the frame and keep the player centred.
+      // Vertical reel from landscape footage: fill the frame and keep the player centred,
+      // or follow the action when it was tracked.
       clip.fit = 'cover';
       const frameW = (a.width / a.height) * (H / W);
       const slack = (frameW - 1) / 2;
       const px = rc.spotlight?.x ?? 0.5;
       clip.transform = { ...clip.transform, x: Math.max(-slack, Math.min(slack, (0.5 - px) * frameW)) };
+      if (!rc.spotlight) clip = follow(clip, a, W, H, rc.track);
     }
     clip.transition = transitions[i % transitions.length];
     clip.transitionDur = hype ? Math.min(0.3, beat || 0.3) : recap ? 0.5 : 0.3;
@@ -279,6 +299,8 @@ export function buildReel(input: ReelInput, assets: Record<string, Asset>): Proj
       text(stats.map(([k, v]) => `${v.padStart(width, ' ')}  ${k.toUpperCase()}`).join('\n'), start + 0.5, d - 0.5, { fontFamily: '"Courier New", monospace', fontSize: (portrait ? 70 : 62) + (stats.length <= 3 ? 16 : 0), color: '#ffffff', align: 'left', bold: true }, sx, portrait ? 0.02 : 0.06, { animIn: 'fade', animInDur: 0.5 }),
     );
   }
+
+  p = appendFinalScore(p, overlays, input, assets, { duration: fit(3.6), transition: hype ? 'flash' : 'dissolve', portrait });
 
   // ---------- outro ----------
   {

@@ -1,5 +1,6 @@
 import { createMediaClip, createTextClip } from '../model/factory';
 import { FONTS } from '../model/presets';
+import { followKeyframes, type PathPoint } from '../ai/reframeCore';
 import type { Asset, Clip, TextStyle } from '../model/types';
 
 export const IMPACT = FONTS[1];
@@ -39,4 +40,12 @@ export function reframe(clip: Clip, a: Asset, W: number, H: number, focusX = 0.5
   const frameW = (a.width / a.height) * (H / W);
   const slack = (frameW - 1) / 2;
   return { ...clip, fit: 'cover', transform: { ...clip.transform, x: Math.max(-slack, Math.min(slack, (0.5 - focusX) * frameW)) } };
+}
+
+/** Fills the frame with wide footage and pans along a tracked path (auto-follow). Call once the clip's timing is final. */
+export function follow(clip: Clip, a: Asset, W: number, H: number, path: PathPoint[] | undefined): Clip {
+  if (!path?.length || a.kind !== 'video' || !a.width || a.width / a.height <= W / H + 0.01) return clip;
+  const keys = followKeyframes(clip, a, W, H, path);
+  if (!keys.length) return clip;
+  return { ...clip, fit: 'cover', transform: { ...clip.transform, x: keys[0].v }, keyframes: { ...clip.keyframes, x: keys } };
 }

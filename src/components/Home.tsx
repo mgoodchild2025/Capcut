@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { addAssetToTimeline, importFiles, newProject, openDraft } from '../actions';
+import { addAssetToTimeline, importFiles, newProject, openDraft, openProjectFile, saveDraftToFile } from '../actions';
 import { deleteDraft, listDrafts, renameDraft, type DraftSummary } from '../engine/persist';
 import { ASPECT_PRESETS } from '../model/presets';
 import { useEditor } from '../store';
@@ -93,6 +93,19 @@ export function Home() {
               />
             </label>
           </div>
+          <label className="link-btn open-file">
+            <Icon name="folder" size={15} /> Open a project file
+            {/* No type filter: phones grey out file types they don't recognise. */}
+            <input
+              type="file"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) void openProjectFile(f);
+              }}
+            />
+          </label>
         </div>
       </section>
 
@@ -152,6 +165,9 @@ export function Home() {
                     </small>
                   </div>
                   <div className="draft-actions">
+                    <button className="icon-btn" title="Save to file (to move it to another device)" aria-label={`Save ${d.name} to a file`} onClick={() => void saveDraftToFile(d.id)}>
+                      <Icon name="share" size={16} />
+                    </button>
                     <button
                       className="icon-btn"
                       title="Rename"

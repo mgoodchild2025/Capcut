@@ -147,3 +147,32 @@ export async function deleteAssetRecord(id: string): Promise<void> {
   tx.objectStore('blobs').delete(id);
   await done(tx);
 }
+
+/** Everything stored for a draft, with the media as blobs (for saving it to a file). */
+export async function readDraftRaw(
+  id: string,
+): Promise<{ project: Project; thumbnail?: string; assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] } | null> {
+  const d = await db();
+  const tx = d.transaction(['projects', 'assets', 'blobs'], 'readonly');
+  const rec = await request(tx.objectStore('projects').get(id) as IDBRequest<ProjectRecord | undefined>);
+  if (!rec) return null;
+  const records = await request(tx.objectStore('assets').index('projectId').getAll(id) as IDBRequest<AssetRecord[]>);
+  const assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] = [];
+  for (const r of records) {
+    const blob = await request(tx.objectStore('blobs').get(r.id) as IDBRequest<Blob | undefined>);
+    if (blob) assets.push({ meta: r.meta, blob });
+  }
+  return { project: rec.project, thumbnail: rec.thumbnail, assets };
+}
+
+/** Stores a whole draft (project, media and all) in one go, e.g. one opened from a file. */
+export async function saveDraftRaw(project: Project, assets: { meta: Omit<Asset, 'url'>; blob: Blob }[], thumbnail?: string): Promise<void> {
+  const d = await db();
+  const tx = d.transaction(['projects', 'assets', 'blobs'], 'readwrite');
+  tx.objectStore('projects').put({ id: project.id, project, thumbnail, updatedAt: project.updatedAt } satisfies ProjectRecord);
+  for (const a of assets) {
+    tx.objectStore('assets').put({ id: a.meta.id, projectId: project.id, meta: a.meta } satisfies AssetRecord);
+    tx.objectStore('blobs').put(a.blob, a.meta.id);
+  }
+  await done(tx);
+}

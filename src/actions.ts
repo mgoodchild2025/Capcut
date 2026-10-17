@@ -261,6 +261,48 @@ export async function openDraft(id: string) {
   }
 }
 
+/** Saves a draft as one `.clipforge` file: through the share sheet on phones (AirDrop, Files), a download elsewhere. */
+export async function saveDraftToFile(id: string): Promise<void> {
+  try {
+    const { draftToFile } = await import('./engine/projectFile');
+    const file = await draftToFile(id);
+    if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: file.name });
+        return;
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return;
+        // Sharing can be refused (for example after a slow read); fall back to a download.
+      }
+    }
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    toast(`Saved ${file.name}`);
+  } catch (e) {
+    console.error(e);
+    toast(`Couldn't save the project: ${(e as Error).message}`);
+  }
+}
+
+/** Opens a `.clipforge` file as a new draft. */
+export async function openProjectFile(file: File): Promise<boolean> {
+  try {
+    const { importProjectFile } = await import('./engine/projectFile');
+    const id = await importProjectFile(file);
+    await openDraft(id);
+    toast('Project opened');
+    return true;
+  } catch (e) {
+    console.error(e);
+    toast((e as Error).name === 'ProjectFileError' ? (e as Error).message : `Couldn't open ${file.name}`);
+    return false;
+  }
+}
+
 function revokeAll() {
   for (const a of Object.values(get().assets)) URL.revokeObjectURL(a.url);
 }
@@ -385,6 +427,32 @@ export async function freezeFrameSelected() {
     const clip = { ...createMediaClip(still), duration: 3, transform: { ...sel.transform }, fit: sel.fit, filter: sel.filter, adjust: { ...sel.adjust }, crop: sel.crop, flipH: sel.flipH, flipV: sel.flipV };
     edit((p) => insertRipple(p, sel.trackId, t, clip));
     select(clip.id);
+  });
+}
+
+/** Pans the selected clip to follow the action, for footage wider than the project frame. */
+export async function autoReframeSelected() {
+  const sel = selectedClip(get());
+  if (!sel || sel.kind !== 'video' || !sel.assetId) {
+    toast('Select a video clip to reframe');
+    return;
+  }
+  const asset = get().assets[sel.assetId];
+  const { width: W, height: H } = get().project.settings;
+  const { needsReframe, trackAction } = await import('./ai/reframe');
+  if (!needsReframe(asset, W, H)) {
+    toast('This clip already fits the frame. Auto reframe is for wide footage in a taller project.');
+    return;
+  }
+  await runTask('Following the action', async (_report, signal) => {
+    const { sourceSpan } = await import('./model/timing');
+    const { follow } = await import('./templates/shared');
+    const path = await trackAction(asset, sel.inPoint, Math.min(asset.duration, sel.inPoint + sourceSpan(sel)), signal);
+    const current = get().project.clips.find((c) => c.id === sel.id);
+    if (!current) return;
+    const next = follow({ ...current, keyframes: { ...current.keyframes, x: undefined } }, asset, W, H, path);
+    edit((p) => ({ ...p, clips: p.clips.map((c) => (c.id === sel.id ? next : c)) }));
+    toast('Reframed to follow the action. Undo to go back.');
   });
 }
 
@@ -798,6 +866,8 @@ export interface WizardResult {
   info: import('./templates/reel').ReelInfo;
   clips: import('./templates/reel').ReelClip[];
   musicId: string | null;
+  /** Pan wide footage to follow the action in narrower reels. */
+  follow?: boolean;
 }
 
 /** Generates cards and sound, then lays out the reel in the current project (undoable). */
@@ -814,6 +884,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     if (w.style === 'team' && w.info.roster.length) variants.push('roster');
     if (w.info.stats.some(([k, v]) => k && v)) variants.push('stats');
     variants.push('outro');
+    const { playedSets } = await import('./templates/match');
+    const finalScore = w.style !== 'lineup' && playedSets(w.info).length > 0;
     // Jersey-number cards: the spotlight player, and lineup starters without a photo or clip.
     const numberCards: [string, string][] =
       w.style === 'spotlight'
@@ -822,13 +894,26 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
           ? w.info.roster.filter((r) => r.starter && !(r.assetId && get().assets[r.assetId])).map((r) => [r.key, r.number])
           : [];
     let step = 0;
-    const steps = variants.length + numberCards.length + (w.musicId ? 1 : 0) + 2;
+    // Plays to auto-follow: wide footage going into a narrower frame, with no spotted player to centre on.
+    const { needsReframe, trackAction } = await import('./ai/reframe');
+    const toTrack = w.follow ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => !c.spotlight && get().assets[c.assetId] && needsReframe(get().assets[c.assetId], W, H)) : [];
+    const steps = variants.length + numberCards.length + toTrack.length + (finalScore ? 1 : 0) + (w.musicId ? 1 : 0) + 3;
     for (const v of variants) {
       const blob = await cardImage(W, H, w.info.colors, v);
       const a = await importBlob(blob, `${v} card.png`);
       if (a) ids[v] = a.id;
       report(++step / steps);
     }
+    if (finalScore) {
+      const a = await importBlob(await cardImage(W, H, w.info.colors, 'stats'), 'final score card.png');
+      if (a) ids.final = a.id;
+      report(++step / steps);
+    }
+    let logo: Asset | null = null;
+    if (w.info.logo) {
+      logo = await importBlob(await (await fetch(w.info.logo)).blob(), 'Team logo.png');
+    }
+    report(++step / steps);
     const players: Record<string, string> = {};
     const byNumber = new Map<string, string>();
     for (const [key, number] of numberCards) {
@@ -860,11 +945,21 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     const impact = await sfx('impact', 'Impact.wav');
     report(++step / steps);
 
+    const clips = w.clips.slice();
+    for (const [c, i] of toTrack) {
+      try {
+        clips[i] = { ...c, track: await trackAction(get().assets[c.assetId], c.inPoint, c.inPoint + c.duration) };
+      } catch (e) {
+        console.warn('Could not track', e);
+      }
+      report(++step / steps);
+    }
+
     const built = buildReel(
       {
         style: w.style,
         info: w.info,
-        clips: w.clips,
+        clips,
         cards: {
           intro: ids.intro,
           info: ids.info,
@@ -875,6 +970,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
           impact: impact?.id,
           roster: ids.roster,
           players,
+          final: ids.final,
+          logo: logo?.id,
         },
       },
       get().assets,

@@ -1039,7 +1039,22 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     }
 
     let music: Asset | null = null;
-    if (w.musicId) {
+    const own = w.musicId?.startsWith('asset:') ? assetOf(w.musicId.slice(6)) : undefined;
+    if (own) {
+      // Your own song: find its beats so beat-cut reels land on them.
+      music = own;
+      if (!own.beats?.length) {
+        try {
+          const { analyzeBeats } = await import('./audio/beats');
+          const { beats, bpm } = await analyzeBeats(own);
+          patchAsset(own.id, { beats, bpm });
+          music = get().assets[own.id];
+        } catch (e) {
+          console.warn('No beats found', e);
+        }
+      }
+      report(++step / steps);
+    } else if (w.musicId) {
       const { MUSIC } = await import('./audio/synth');
       const track = MUSIC.find((m) => m.id === w.musicId)!;
       const { blob, beats, bpm } = await renderSound('music', w.musicId);

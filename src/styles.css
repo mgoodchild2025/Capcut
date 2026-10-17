@@ -3101,7 +3101,7 @@ input[type='range']::-moz-range-thumb {
 
 .clips-step {
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 22px;
   align-items: start;
 }
@@ -3906,7 +3906,8 @@ input[type='range']::-moz-range-thumb {
 
   .player-step,
   .clips-step {
-    grid-template-columns: 1fr;
+    /* minmax(0, ...) lets the column shrink below its widest row instead of overflowing the screen. */
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .player-preview {

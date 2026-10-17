@@ -36,7 +36,7 @@ export function VolleyballTab() {
           <Icon name="volleyball" size={34} />
         </span>
         <span>
-          <strong>Build a highlight reel</strong>
+          <strong>Highlight reel</strong>
           <small>Recruiting, hype or season recap. Titles, music and spotlights done for you.</small>
         </span>
         <Icon name="chevronRight" />

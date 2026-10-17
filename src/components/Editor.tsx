@@ -22,11 +22,13 @@ import { useIsMobile } from '../ui/useMediaQuery';
 import { Library } from './Library';
 import { MobileWorkspace } from './MobileWorkspace';
 import { ReelWizard } from './ReelWizard';
+import { HelpDialog } from './HelpDialog';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 
 export function Editor() {
   const [exporting, setExporting] = useState(false);
+  const [help, setHelp] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
   const name = useEditor((s) => s.project.name);
   const hasClips = useEditor((s) => s.project.clips.length > 0);
@@ -77,6 +79,8 @@ export function Editor() {
       } else if (e.key === 'Escape') {
         if (useEditor.getState().pick) useEditor.setState({ pick: null });
         else select(null);
+      } else if (e.key === '?') {
+        setHelp((h) => !h);
       } else if (key === 'm') {
         addMarkerAtPlayhead();
       } else if (key === 'n') {
@@ -130,7 +134,10 @@ export function Editor() {
           <SaveState />
         </div>
         <div className="topbar-right">
-          <button className="btn primary" disabled={!hasClips} onClick={() => setExporting(true)}>
+          <button className="icon-btn hide-mobile" title="Shortcuts (?)" aria-label="Keyboard shortcuts" onClick={() => setHelp(true)}>
+            <Icon name="keyboard" />
+          </button>
+          <button className="btn primary" aria-label="Export" disabled={!hasClips} onClick={() => setExporting(true)}>
             <Icon name="export" /> <span className="hide-xs">Export</span>
           </button>
         </div>
@@ -149,6 +156,7 @@ export function Editor() {
       )}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {wizard && <ReelWizard />}
+      {help && <HelpDialog onClose={() => setHelp(false)} />}
       {fileDrag && <div className="drop-overlay">Drop to import</div>}
     </div>
   );

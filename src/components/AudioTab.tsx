@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { addMusic, addSfx, startVoiceover, stopPreviewSound, stopVoiceover, togglePreviewSound } from '../actions';
+import { addMusic, addSfx, generateSpeech, startVoiceover, stopPreviewSound, stopVoiceover, togglePreviewSound } from '../actions';
+import { TTS_VOICES } from '../ai/tts';
 import { MUSIC, SFX, trackLength } from '../audio/synth';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
@@ -102,6 +103,9 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
 
 function VoiceoverPanel() {
   const recording = useEditor((s) => s.recording);
+  const busy = useEditor((s) => !!s.task);
+  const [script, setScript] = useState('');
+  const [voice, setVoice] = useState(TTS_VOICES[0].id);
   const t = useEditor((s) => s.currentTime);
   const fps = useEditor((s) => s.project.settings.fps);
   return (
@@ -125,6 +129,32 @@ function VoiceoverPanel() {
           'Tap to record'
         )}
       </p>
+      <div className="tts">
+        <h5 className="lib-h">
+          <Icon name="sparkle" size={13} /> Text to speech (AI)
+        </h5>
+        <textarea
+          className="text-input"
+          rows={3}
+          placeholder="Type what the narrator should say..."
+          value={script}
+          onChange={(e) => setScript(e.target.value)}
+          maxLength={600}
+        />
+        <div className="tts-row">
+          <select className="select" value={voice} onChange={(e) => setVoice(e.target.value)} aria-label="Voice">
+            {TTS_VOICES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <button className="btn primary" disabled={busy || !script.trim()} onClick={() => void generateSpeech(script, voice)}>
+            Speak
+          </button>
+        </div>
+        <p className="muted small">Runs on your device. The first use downloads a voice model.</p>
+      </div>
     </div>
   );
 }

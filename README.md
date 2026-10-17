@@ -1,66 +1,92 @@
 # ClipForge
 
-A CapCut-style video editor that runs entirely in the browser. Media never leaves your machine: files are decoded, composited and exported locally, and drafts are kept in IndexedDB.
+A CapCut-style video editor that runs entirely in the browser, with a built-in workflow for volleyball highlight reels. Media never leaves your machine: files are decoded, composited and exported locally, and drafts are kept in IndexedDB.
 
-## Features
+**Live app:** https://mgoodchild2025.github.io/Capcut/ (published by `.github/workflows/deploy-pages.yml`)
 
-- **Projects and drafts**: 16:9, 9:16, 1:1, 4:5, 4:3 and 21:9 canvases. Every edit autosaves; reopen drafts from the home screen.
-- **Media library**: import video, photos and audio by picker or drag and drop. Thumbnails, timeline filmstrips and audio waveforms are generated on import.
-- **Multi-track timeline**: magnetic main track, overlay video tracks, text tracks and audio tracks. Drag clips between tracks, trim either edge, split, duplicate, ripple delete, snap to edges and the playhead, zoom (Ctrl + wheel), and mute, hide or lock tracks.
-- **Preview canvas**: real-time compositing with on-canvas move, scale and rotate handles plus centre guides.
-- **Automatic captions**: speech recognition (Whisper, via Transformers.js) runs in a background worker on your device, using WebGPU when available. Captions land on their own track as editable text clips in Classic, Boxed, Karaoke or Pop styles, with word-by-word highlighting. The first run downloads a speech model of about 80 to 150 MB from Hugging Face, which the browser caches.
-- **Phones and tablets**: a touch layout with the preview on top, the timeline beneath and tools in bottom sheets. Tap to select, drag a selected clip, pinch the timeline to zoom, and pinch or twist in the preview to scale and rotate.
-- **Text and stickers**: text templates, fonts, size, colour, stroke, background, alignment and shadow, plus an emoji sticker set.
-- **Look**: 14 filter presets, plus brightness, contrast, saturation, hue, blur and vignette.
-- **Motion**: in and out animations (fade, slide, zoom, spin, pop) and transitions between clips (dissolve, dip to black, push, wipe, zoom, blur).
-- **Audio**: per-clip volume up to 200%, fade in and out, track mute, and speed changes from 0.25x to 10x.
-- **Export**: 480p to 4K at 24 to 60 fps with three quality levels, as MP4 with mixed audio. Where the browser supports WebCodecs (Chrome, Edge, recent Firefox and Safari), export decodes, composites and encodes frame by frame: frame-accurate, usually faster than real time, and it keeps going in a background tab. Otherwise it falls back to recording playback in real time.
-- **Undo and redo** for every edit. Each drag or slider gesture counts as one step.
+## Volleyball highlight reels
+
+1. On the home screen, pick **Recruiting reel**, **Hype reel** or **Season recap**. You can also open the **Volleyball** tab in the editor.
+2. Enter the player or team details and pick team colours. The title card previews live, and details are remembered for next time.
+3. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. It then ranks the best rallies, each framed from serve to end whistle. Pick plays from the AI results or use whole clips, then add skill labels (Kill, Ace, Block...) and reorder them.
+4. Tap your player in each play to place a **spotlight**. The reel freezes that frame, dims the surroundings and rings the player.
+5. Choose a music track and press **Build my reel**. You get a complete, editable timeline:
+   - Title, profile, stats and outro cards painted in your team colours.
+   - Spotlights, skill labels and a corner name tag.
+   - Transitions and music.
+   - Hype reels add slow-motion on the hit, cuts locked to the beat, flashes and whooshes, and reframe landscape footage to 9:16 around your player.
+
+The Volleyball tab also has text presets (KILL!, ACE!, BLOCK!, DIG!, name and score bugs) and stickers.
+
+## Editor features
+
+- **Projects and drafts**:
+  - Canvases in 16:9, 9:16, 1:1, 4:5, 4:3 and 21:9.
+  - Autosave to drafts.
+  - Works on desktop and phones: touch layout with bottom sheets, pinch-zoom timeline, and pinch or twist on the preview.
+- **Timeline**:
+  - Magnetic main track, plus overlay, text and audio tracks.
+  - Drag between tracks, trim, split, duplicate and ripple delete.
+  - Snapping to edges, the playhead and markers.
+  - Mute, hide and lock per track.
+- **Clip tools**:
+  - Keyframes for position, scale, rotation, opacity and volume.
+  - Speed from 0.25x to 10x, and speed curves (Montage, Hero, Bullet, Flash in/out, Jump cut).
+  - Crop and flip.
+  - Freeze frame, reverse, extract audio, replace media, and copy/paste style.
+- **Look**:
+  - 14 filters, plus brightness, contrast, saturation, hue, blur and vignette.
+  - Chroma key (green screen) with an eyedropper.
+  - AI background removal for photos and freeze frames.
+- **Motion**:
+  - In and out animations.
+  - Transitions: dissolve, dip to black, push, wipe, zoom, blur and flash. Both clips keep playing during a transition, with an audio crossfade.
+- **Text**: templates, fonts, stroke, background and shadow, plus emoji stickers.
+- **Automatic captions**: on-device Whisper, in Classic, Boxed, Karaoke or Pop styles with word highlighting.
+- **Audio**:
+  - Five built-in royalty-free music tracks and twelve sound effects, synthesised in the browser.
+  - Voiceover recording and AI text-to-speech.
+  - Beat detection with bar markers, and **Sync cuts to the beat**.
+- **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing.
+
+## AI that runs on your device
+
+| Feature | How |
+| --- | --- |
+| Highlight finder | Signal analysis of audio (whistle tones, crowd level) and video motion. No download. |
+| Beat detection | Onset envelope plus tempo and phase grid search. No download. |
+| Captions | Whisper base (Transformers.js, WebGPU or WASM). Downloads about 80 to 150 MB on first use. |
+| Background removal | MODNet (Transformers.js). Downloads about 25 MB on first use. |
+| Text to speech | Supertonic or MMS-TTS (Transformers.js). Downloads a voice model on first use. |
+
+Models are fetched from Hugging Face once and then cached by the browser. Nothing you edit is uploaded.
 
 ## Keyboard shortcuts
 
-| Key | Action |
-| --- | --- |
-| Space | Play / pause |
-| S or B | Split at playhead (the selected clip, or every clip under the playhead) |
-| Delete / Backspace | Delete clip (Shift for ripple delete) |
-| Ctrl/Cmd + D | Duplicate |
-| Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z | Undo, redo |
-| Left / Right | Step one frame (Shift steps 10) |
-| Home / End | Jump to start / end |
-| N | Toggle snapping (hold Alt while dragging to bypass) |
-| + / - | Zoom the timeline |
-| Esc | Deselect |
+Press **?** in the editor for the full list. The most useful ones: Space (play), S (split), Delete, Ctrl/Cmd+Z (undo), M (marker), N (snapping), and arrow keys (frame step).
 
-## Getting started
+## Development
 
 ```bash
-npm install
+npm install      # install scripts are skipped via .npmrc (Node-only native deps aren't needed)
 npm run dev      # http://localhost:5173
-npm test         # timeline model unit tests
+npm test         # unit tests (timeline, timing, beats, highlights, captions, reels, export planning)
 npm run build    # type-check and production build into dist/
 ```
 
-**Live app:** https://mgoodchild2025.github.io/Capcut/ (rebuilt and published by `.github/workflows/deploy-pages.yml` on every push to `main`)
-
-Use a recent Chromium-based browser (Chrome or Edge) for MP4 export and the widest codec support. Firefox works and exports WebM.
+Use a recent Chrome or Edge for the widest codec support. Firefox and Safari work, with fewer export codecs.
 
 ## Architecture
 
 ```
 src/
-  model/        Pure data model: types, presets, factories and timeline operations (unit tested)
-  engine/
-    engine.ts   Playback clock, one media element per clip, Web Audio mixing, render loop, export
-    render.ts   Canvas compositor: layout, filters, animations, transitions, text, hit-testing
-    media.ts    Import, metadata, thumbnails, filmstrips and waveforms
-    persist.ts  IndexedDB drafts (projects, asset metadata and media blobs)
-  captions/     Caption grouping and styles, audio windowing, and the Whisper worker
-  components/   React UI: Home, Editor, Library, Preview, Inspector, Timeline, ExportDialog, MobileWorkspace
-  store.ts      Zustand store with undo/redo history and gesture grouping
-  actions.ts    User-level commands that combine the store, engine and persistence
+  model/       Data model, timeline operations, timing (speed curves, holds, keyframes)
+  engine/      Playback engine, canvas compositor, chroma key, WebCodecs export, audio mix, frames, drafts
+  audio/       Music and SFX synthesiser, WAV encoder, beat detection and cut-to-beat
+  ai/          Highlight finder, background removal and TTS workers
+  captions/    Caption grouping and styles, audio windowing, Whisper worker
+  templates/   Reel builder and team-colour card artwork
+  components/  React UI: Home, Editor, Library, Preview, Inspector, Timeline, ReelWizard, MobileWorkspace...
 ```
 
-The timeline is a flat list of clips, each pointing at a track. `activeLayers(project, t)` resolves what is visible and audible at any moment, including the held outgoing frame during a transition. Both the preview and the export render from that one function, so what you see is what you export.
-
-Export (`engine/exportFast.ts`) decodes each video clip with WebCodecs via [Mediabunny](https://mediabunny.dev), feeds the decoded frames to the same compositor, and encodes the result to MP4. The audio mix is rendered separately on an `OfflineAudioContext`. If a browser lacks WebCodecs, or a clip can't be decoded that way, the dialog falls back to recording the composited canvas and the Web Audio mix in real time with `MediaRecorder`. Speed changes shift pitch in both preview and export.
+The preview, export and audio mix all read the same timing model (`model/timing.ts`) and compositor (`engine/render.ts`), so what you see is what you export.

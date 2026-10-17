@@ -39,6 +39,8 @@ npm test         # timeline model unit tests
 npm run build    # type-check and production build into dist/
 ```
 
+**Live app:** https://mgoodchild2025.github.io/Capcut/ (rebuilt and published by `.github/workflows/deploy-pages.yml` on every push to `main`)
+
 Use a recent Chromium-based browser (Chrome or Edge) for MP4 export and the widest codec support. Firefox works and exports WebM.
 
 ## Architecture

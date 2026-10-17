@@ -10,16 +10,20 @@ import {
   removeAsset,
   targetVisualClip,
 } from '../actions';
+import { CAPTION_PRESETS, hasCaptions } from '../captions/captions';
+import { cancelCaptions, clearCaptions, generateCaptions, restyleCaptions, useCaptions } from '../captions/state';
+import { LANGUAGES } from '../captions/languages';
 import { DEFAULT_TEXT, FILTERS, STICKERS, TEXT_TEMPLATES, TRANSITIONS } from '../model/presets';
 import type { Asset } from '../model/types';
 import { selectedClip, useEditor, type LeftTab } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatBytes, formatDuration } from '../utils';
 
-const TABS: { id: LeftTab; label: string; icon: string }[] = [
+export const TABS: { id: LeftTab; label: string; icon: string }[] = [
   { id: 'media', label: 'Media', icon: 'media' },
   { id: 'audio', label: 'Audio', icon: 'audio' },
   { id: 'text', label: 'Text', icon: 'text' },
+  { id: 'captions', label: 'Captions', icon: 'captions' },
   { id: 'stickers', label: 'Stickers', icon: 'sticker' },
   { id: 'filters', label: 'Filters', icon: 'filter' },
   { id: 'transitions', label: 'Transitions', icon: 'transition' },
@@ -46,15 +50,29 @@ export function Library() {
         ))}
       </nav>
       <div className="lib-body">
-        {tab === 'media' && <MediaTab kinds={['video', 'image']} />}
-        {tab === 'audio' && <MediaTab kinds={['audio']} />}
-        {tab === 'text' && <TextTab />}
-        {tab === 'stickers' && <StickerTab />}
-        {tab === 'filters' && <FilterTab />}
-        {tab === 'transitions' && <TransitionTab />}
+        <LibraryTabBody tab={tab} />
       </div>
     </aside>
   );
+}
+
+export function LibraryTabBody({ tab }: { tab: LeftTab }) {
+  switch (tab) {
+    case 'media':
+      return <MediaTab kinds={['video', 'image']} />;
+    case 'audio':
+      return <MediaTab kinds={['audio']} />;
+    case 'text':
+      return <TextTab />;
+    case 'captions':
+      return <CaptionsTab />;
+    case 'stickers':
+      return <StickerTab />;
+    case 'filters':
+      return <FilterTab />;
+    case 'transitions':
+      return <TransitionTab />;
+  }
 }
 
 function ImportButton({ accept, label }: { accept: string; label: string }) {
@@ -275,6 +293,112 @@ function TransitionTab() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CaptionsTab() {
+  const { running, stage, error, language, presetId } = useCaptions();
+  const captioned = useEditor((s) => hasCaptions(s.project));
+  const captionCount = useEditor((s) => {
+    const ids = new Set(s.project.tracks.filter((t) => t.captions).map((t) => t.id));
+    return s.project.clips.filter((c) => ids.has(c.trackId)).length;
+  });
+  const hasAudio = useEditor((s) => s.project.clips.some((c) => c.kind === 'video' || c.kind === 'audio'));
+
+  return (
+    <div className="captions-tab">
+      <p className="lib-note">
+        Turns speech in your timeline into timed, editable captions. Recognition runs on your device, so nothing is
+        uploaded. The first run downloads a speech model of about 80 to 150 MB, which your browser then keeps.
+      </p>
+
+      <h5 className="lib-h">Style</h5>
+      <div className="caption-styles">
+        {CAPTION_PRESETS.map((p) => {
+          const s = { ...DEFAULT_TEXT, ...p.style };
+          return (
+            <button
+              key={p.id}
+              className={`caption-style ${presetId === p.id ? 'on' : ''}`}
+              disabled={running}
+              onClick={() => (captioned ? restyleCaptions(p.id) : useCaptions.setState({ presetId: p.id }))}
+              title={captioned ? `Restyle captions as ${p.label}` : p.label}
+            >
+              <span
+                className="caption-sample"
+                style={{
+                  fontFamily: s.fontFamily,
+                  fontWeight: s.bold ? 700 : 400,
+                  color: s.color,
+                  background: s.background ?? 'transparent',
+                  WebkitTextStroke: s.strokeWidth ? `1px ${s.strokeColor}` : undefined,
+                }}
+              >
+                {p.highlight ? (
+                  <>
+                    say <span style={{ color: p.highlight }}>hello</span>
+                  </>
+                ) : (
+                  'say hello'
+                )}
+              </span>
+              <span>{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <h5 className="lib-h">Spoken language</h5>
+      <select
+        className="select"
+        value={language}
+        disabled={running}
+        onChange={(e) => useCaptions.setState({ language: e.target.value })}
+      >
+        {LANGUAGES.map((l) => (
+          <option key={l.code} value={l.code}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+
+      {running && stage ? (
+        <div className="caption-progress" role="status">
+          <span>
+            {stage.stage === 'audio' && 'Preparing audio...'}
+            {stage.stage === 'download' &&
+              `Downloading speech model${stage.total ? ` (${formatBytes(stage.loaded)} of ${formatBytes(stage.total)})` : '...'}`}
+            {stage.stage === 'transcribe' && `Recognising speech${stage.device === 'webgpu' ? ' (GPU)' : ''}...`}
+          </span>
+          <div className="bar">
+            <i
+              className={stage.stage === 'audio' ? 'indeterminate' : ''}
+              style={{ width: stage.stage === 'audio' ? undefined : `${Math.round(stage.progress * 100)}%` }}
+            />
+          </div>
+          <button className="btn block" onClick={cancelCaptions}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button className="btn primary block" disabled={!hasAudio} onClick={() => void generateCaptions()}>
+          <Icon name="captions" /> {captioned ? 'Regenerate captions' : 'Generate captions'}
+        </button>
+      )}
+      {!hasAudio && <p className="lib-note">Add a video or audio clip with speech first.</p>}
+      {error && <p className="error small">{error}</p>}
+
+      {captioned && !running && (
+        <div className="caption-summary">
+          <span>
+            {captionCount} caption{captionCount === 1 ? '' : 's'} on the Captions track. Select one to edit its text.
+          </span>
+          <button className="btn block" onClick={clearCaptions}>
+            <Icon name="trash" size={16} /> Remove captions
+          </button>
+        </div>
+      )}
     </div>
   );
 }

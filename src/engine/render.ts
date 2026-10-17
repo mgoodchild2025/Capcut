@@ -1,3 +1,4 @@
+import { activeWordIndex } from '../captions/captions';
 import { activeLayers, type Layer } from '../model/ops';
 import { FILTERS } from '../model/presets';
 import type { AnimKind, Clip, Project, TransitionKind } from '../model/types';
@@ -146,9 +147,10 @@ function sourceSize(el: Source): [number, number] {
   return [el.width, el.height];
 }
 
-export function textFont(clip: Clip, H: number): { font: string; size: number } {
+/** Font for a text clip. Sizes are relative to a 1080px short side, so text fits portrait canvases too. */
+export function textFont(clip: Clip, shortSide: number): { font: string; size: number } {
   const t = clip.text!;
-  const size = (t.fontSize * H) / 1080;
+  const size = (t.fontSize * shortSide) / 1080;
   return { font: `${t.italic ? 'italic ' : ''}${t.bold ? '700 ' : '400 '}${size}px ${t.fontFamily}`, size };
 }
 
@@ -227,9 +229,9 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         }
       }
     } else if (clip.kind === 'text' && clip.text) {
-      [w, h] = drawText(ctx, clip, H, scale, m.blur * pxScale);
+      [w, h] = drawText(ctx, clip, Math.min(W, H), scale, m.blur * pxScale, clip.inPoint + layer.local * clip.speed);
     } else if (clip.kind === 'sticker' && clip.sticker) {
-      const size = (220 * H) / 1080;
+      const size = (220 * Math.min(W, H)) / 1080;
       ctx.scale(scale, scale);
       ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
       ctx.textAlign = 'center';
@@ -246,9 +248,16 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
   return boxes;
 }
 
-function drawText(ctx: CanvasRenderingContext2D, clip: Clip, H: number, scale: number, blurPx: number): [number, number] {
+function drawText(
+  ctx: CanvasRenderingContext2D,
+  clip: Clip,
+  shortSide: number,
+  scale: number,
+  blurPx: number,
+  src: number,
+): [number, number] {
   const t = clip.text!;
-  const { font, size } = textFont(clip, H);
+  const { font, size } = textFont(clip, shortSide);
   ctx.scale(scale, scale);
   ctx.font = font;
   ctx.textBaseline = 'middle';
@@ -266,11 +275,9 @@ function drawText(ctx: CanvasRenderingContext2D, clip: Clip, H: number, scale: n
     ctx.fill();
   }
   const top = -((lines.length - 1) * lineH) / 2;
-  ctx.textAlign = t.align;
-  const anchorX = t.align === 'left' ? -maxW / 2 : t.align === 'right' ? maxW / 2 : 0;
   ctx.lineJoin = 'round';
-  lines.forEach((line, i) => {
-    const y = top + i * lineH;
+
+  const paint = (text: string, x: number, y: number, color: string) => {
     if (t.shadow) {
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = size * 0.18;
@@ -279,13 +286,38 @@ function drawText(ctx: CanvasRenderingContext2D, clip: Clip, H: number, scale: n
     if (t.strokeWidth > 0) {
       ctx.strokeStyle = t.strokeColor;
       ctx.lineWidth = (t.strokeWidth * size) / 50;
-      ctx.strokeText(line, anchorX, y);
+      ctx.strokeText(text, x, y);
       ctx.shadowColor = 'transparent';
     }
-    ctx.fillStyle = t.color;
-    ctx.fillText(line, anchorX, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
     ctx.shadowColor = 'transparent';
-  });
+  };
+
+  // Word-by-word highlight for captions, as long as the text still matches the recognised words.
+  const cap = clip.caption;
+  const lineWords = lines.map((l) => l.split(/\s+/).filter(Boolean));
+  if (cap?.highlight && lineWords.flat().length === cap.words.length) {
+    const active = activeWordIndex(cap.words, src);
+    const space = ctx.measureText(' ').width;
+    ctx.textAlign = 'left';
+    let index = 0;
+    lineWords.forEach((ws, i) => {
+      const y = top + i * lineH;
+      const lw = widths[i];
+      let x = t.align === 'left' ? -maxW / 2 : t.align === 'right' ? maxW / 2 - lw : -lw / 2;
+      for (const word of ws) {
+        paint(word, x, y, index === active ? cap.highlight! : t.color);
+        x += ctx.measureText(word).width + space;
+        index++;
+      }
+    });
+    return [bw * scale, bh * scale];
+  }
+
+  ctx.textAlign = t.align;
+  const anchorX = t.align === 'left' ? -maxW / 2 : t.align === 'right' ? maxW / 2 : 0;
+  lines.forEach((line, i) => paint(line, anchorX, top + i * lineH, t.color));
   return [bw * scale, bh * scale];
 }
 

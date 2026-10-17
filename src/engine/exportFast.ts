@@ -14,7 +14,8 @@ import {
 } from 'mediabunny';
 import { projectDuration } from '../model/ops';
 import type { Asset, Clip, Project } from '../model/types';
-import { fastExportAvailable, frameCount, planAudio, planVideoFrames, videoLayers } from './exportPlan';
+import { fastExportAvailable, frameCount, planVideoFrames, videoLayers } from './exportPlan';
+import { mixAudio } from './mix';
 import { renderFrame, type Source } from './render';
 
 export interface FastExportOptions {
@@ -146,47 +147,6 @@ async function loadImages(project: Project, assets: Record<string, Asset>): Prom
   return images;
 }
 
-/** Renders the whole audio mix offline, much faster than real time. Returns null when nothing is audible. */
-async function mixAudio(project: Project, assets: Record<string, Asset>, signal: AbortSignal): Promise<AudioBuffer | null> {
-  const cues = planAudio(project, assets);
-  if (!cues.length) return null;
-  const duration = projectDuration(project);
-  const ctx = new OfflineAudioContext(2, Math.max(1, Math.ceil(duration * SAMPLE_RATE)), SAMPLE_RATE);
-  const decoded = new Map<string, AudioBuffer | null>();
-  let scheduled = 0;
-  for (const cue of cues) {
-    checkAbort(signal);
-    if (!decoded.has(cue.assetId)) {
-      try {
-        const data = await (await blobOf(assets[cue.assetId])).arrayBuffer();
-        decoded.set(cue.assetId, await ctx.decodeAudioData(data));
-      } catch {
-        decoded.set(cue.assetId, null); // no audio track, or a codec the browser can't decode
-      }
-    }
-    const buffer = decoded.get(cue.assetId);
-    if (!buffer || cue.offset >= buffer.duration) continue;
-
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    src.playbackRate.value = cue.rate;
-    const gain = ctx.createGain();
-    const g = gain.gain;
-    const end = cue.when + cue.duration;
-    g.setValueAtTime(cue.fadeIn > 0 ? 0 : cue.volume, cue.when);
-    if (cue.fadeIn > 0) g.linearRampToValueAtTime(cue.volume, cue.when + cue.fadeIn);
-    if (cue.fadeOut > 0) {
-      g.setValueAtTime(cue.volume, Math.max(cue.when + cue.fadeIn, end - cue.fadeOut));
-      g.linearRampToValueAtTime(0, end);
-    }
-    src.connect(gain).connect(ctx.destination);
-    src.start(cue.when, cue.offset, Math.min(cue.sourceDuration, buffer.duration - cue.offset));
-    scheduled++;
-  }
-  if (!scheduled) return null;
-  return ctx.startRendering();
-}
-
 /**
  * Frame-accurate export: decodes sources with WebCodecs, composites each frame with the same
  * renderer as the preview, and encodes straight to MP4. Runs as fast as the machine allows.
@@ -226,7 +186,7 @@ export async function exportFast(
     const images = await loadImages(project, assets);
     checkAbort(opts.signal);
 
-    const audio = await mixAudio(project, assets, opts.signal);
+    const audio = await mixAudio(project, assets, { sampleRate: SAMPLE_RATE, channels: 2, signal: opts.signal });
     const audioCodec = audio
       ? await getFirstEncodableAudioCodec(format.getSupportedAudioCodecs(), {
           numberOfChannels: 2,

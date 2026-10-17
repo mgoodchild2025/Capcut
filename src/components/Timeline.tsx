@@ -14,9 +14,11 @@ import type { Asset, Clip, Track } from '../model/types';
 import { beginGesture, commit, edit, endGesture, redo, select, undo, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { clamp, formatTimecode } from '../utils';
+import { useIsMobile } from '../ui/useMediaQuery';
 import { ASSET_MIME } from './Library';
 
-const HEAD_W = 132;
+const HEAD_W_DESKTOP = 132;
+const HEAD_W_PHONE = 52;
 const RULER_H = 28;
 const MIN_PPS = 4;
 const MAX_PPS = 480;
@@ -42,6 +44,11 @@ export function Timeline() {
   const project = useEditor((s) => s.project);
   const assets = useEditor((s) => s.assets);
   const pps = useEditor((s) => s.pxPerSec);
+  const phone = useIsMobile();
+  const HEAD_W = phone ? HEAD_W_PHONE : HEAD_W_DESKTOP;
+  // Long-lived listeners read the current width through this ref.
+  const headRef = useRef(HEAD_W);
+  headRef.current = HEAD_W;
   const selectedId = useEditor((s) => s.selectedId);
   const snapping = useEditor((s) => s.snapping);
   const canUndo = useEditor((s) => s.past.length > 0);
@@ -66,6 +73,10 @@ export function Timeline() {
       const t = project.tracks[i];
       if (t.main) {
         names[t.id] = 'Main';
+        continue;
+      }
+      if (t.captions) {
+        names[t.id] = 'Captions';
         continue;
       }
       counts[t.kind] = (counts[t.kind] ?? 0) + 1;
@@ -97,9 +108,10 @@ export function Timeline() {
         if (!s.playing) return;
         const el = scrollRef.current;
         if (!el) return;
-        const x = HEAD_W + s.currentTime * s.pxPerSec;
-        if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEAD_W) {
-          el.scrollLeft = x - HEAD_W - 40;
+        const head = headRef.current;
+        const x = head + s.currentTime * s.pxPerSec;
+        if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + head) {
+          el.scrollLeft = x - head - 40;
         }
       }),
     [],
@@ -113,15 +125,51 @@ export function Timeline() {
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left + el.scrollLeft - HEAD_W;
+      const x = e.clientX - r.left + el.scrollLeft - headRef.current;
       const old = useEditor.getState().pxPerSec;
       const t = x / old;
       const next = clamp(old * Math.exp(-e.deltaY * 0.0015), MIN_PPS, MAX_PPS);
       useEditor.setState({ pxPerSec: next });
-      requestAnimationFrame(() => (el.scrollLeft = t * next + HEAD_W - (e.clientX - r.left)));
+      requestAnimationFrame(() => (el.scrollLeft = t * next + headRef.current - (e.clientX - r.left)));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Two-finger pinch zooms the timeline around the midpoint between the fingers.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let pinch: { d0: number; pps0: number; t: number; x: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      const r = el.getBoundingClientRect();
+      const x = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+      const pps0 = useEditor.getState().pxPerSec;
+      pinch = { d0: dist(e.touches) || 1, pps0, x, t: (x + el.scrollLeft - headRef.current) / pps0 };
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const next = clamp((pinch.pps0 * dist(e.touches)) / pinch.d0, MIN_PPS, MAX_PPS);
+      useEditor.setState({ pxPerSec: next });
+      const p = pinch;
+      requestAnimationFrame(() => (el.scrollLeft = p.t * next + headRef.current - p.x));
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd);
+    el.addEventListener('touchcancel', onEnd);
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
   }, []);
 
   const timeAtClientX = useCallback(
@@ -160,15 +208,20 @@ export function Timeline() {
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   // ---------- clip drag / trim ----------
   const onClipPointerDown = (e: React.PointerEvent, clip: Clip, mode: DragState['mode']) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    // On touch, a clip must be selected (by tapping) before it can be dragged or trimmed, so
+    // swiping across clips still scrolls the timeline.
+    if (e.pointerType === 'touch' && useEditor.getState().selectedId !== clip.id) return;
     select(clip.id);
     const track = project.tracks.find((t) => t.id === clip.trackId);
     if (track?.locked) return;
@@ -229,6 +282,7 @@ export function Timeline() {
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
       setSnapLine(null);
       setDrag(null);
       if (latest.mode === 'move' && latest.moved) {
@@ -236,8 +290,13 @@ export function Timeline() {
       }
       endGesture();
     };
+    const cancel = () => {
+      latest = { ...latest, moved: false };
+      up();
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
   };
 
   // ---------- drops from the library / desktop ----------
@@ -340,7 +399,7 @@ export function Timeline() {
             <div className="tl-corner" style={{ width: HEAD_W }}>
               <span className="tl-corner-dur">{formatTimecode(duration, project.settings.fps).slice(0, 5)}</span>
             </div>
-            <Ruler pps={pps} left={view.left} width={view.width} onPointerDown={startScrub} />
+            <Ruler pps={pps} headW={HEAD_W} left={view.left} width={view.width} onPointerDown={startScrub} />
           </div>
 
           {project.tracks.map((track) => (
@@ -350,12 +409,16 @@ export function Timeline() {
               style={{ height: rowHeight(track) }}
               data-track-id={track.id}
             >
-              <TrackHead track={track} name={trackNames[track.id]} />
+              <TrackHead track={track} name={trackNames[track.id]} width={HEAD_W} compact={phone} />
               <div
                 className="tl-lane"
                 onPointerDown={(e) => {
+                  if (e.pointerType === 'touch') return;
                   select(null);
                   startScrub(e);
+                }}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) select(null);
                 }}
               >
                 {project.clips
@@ -373,7 +436,9 @@ export function Timeline() {
                     />
                   ))}
                 {track.main && project.clips.every((c) => c.trackId !== track.id) && (
-                  <div className="lane-empty">Drag videos and photos here, or double-click media to add</div>
+                  <div className="lane-empty">
+                    {phone ? 'Tap Media below to add videos and photos' : 'Drag videos and photos here, or double-click media to add'}
+                  </div>
                 )}
               </div>
             </div>
@@ -394,7 +459,7 @@ export function Timeline() {
           )}
           {dropHint && <div className="drop-hint" style={{ left: dropHint.x, top: dropHint.top, height: dropHint.height }} />}
           {snapLine !== null && <div className="snap-line" style={{ left: HEAD_W + snapLine * pps }} />}
-          <Playhead pps={pps} onPointerDown={startScrub} />
+          <Playhead pps={pps} headW={HEAD_W} onPointerDown={startScrub} />
         </div>
       </div>
     </section>
@@ -403,11 +468,13 @@ export function Timeline() {
 
 function Ruler({
   pps,
+  headW,
   left,
   width,
   onPointerDown,
 }: {
   pps: number;
+  headW: number;
   left: number;
   width: number;
   onPointerDown: (e: React.PointerEvent) => void;
@@ -415,7 +482,7 @@ function Ruler({
   const steps = [1 / 30, 0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
   const major = steps.find((s) => s * pps >= 90) ?? 600;
   const minor = major / (major >= 1 && major % 5 === 0 ? 5 : 2);
-  const t0 = Math.max(0, (left - HEAD_W) / pps);
+  const t0 = Math.max(0, (left - headW) / pps);
   const t1 = (left + width) / pps;
   const ticks: { t: number; major: boolean }[] = [];
   const first = Math.floor(t0 / minor) * minor;
@@ -444,21 +511,37 @@ function Ruler({
   );
 }
 
-function Playhead({ pps, onPointerDown }: { pps: number; onPointerDown: (e: React.PointerEvent) => void }) {
+function Playhead({ pps, headW, onPointerDown }: { pps: number; headW: number; onPointerDown: (e: React.PointerEvent) => void }) {
   const t = useEditor((s) => s.currentTime);
   return (
-    <div className="playhead" style={{ left: HEAD_W + t * pps }}>
+    <div className="playhead" style={{ left: headW + t * pps }}>
       <span className="playhead-knob" onPointerDown={onPointerDown} />
     </div>
   );
 }
 
-function TrackHead({ track, name }: { track: Track; name: string }) {
+function TrackHead({ track, name, width, compact }: { track: Track; name: string; width: number; compact: boolean }) {
   const toggle = (key: 'muted' | 'hidden' | 'locked') =>
     edit((p) => ({ ...p, tracks: p.tracks.map((t) => (t.id === track.id ? { ...t, [key]: !t[key] } : t)) }));
-  const icon = track.kind === 'audio' ? 'audio' : track.kind === 'text' ? 'text' : 'film';
+  const icon = track.captions ? 'captions' : track.kind === 'audio' ? 'audio' : track.kind === 'text' ? 'text' : 'film';
+  if (compact) {
+    // Phones: just the track icon and its most useful switch (sound for media, visibility for text).
+    const key = track.kind === 'text' ? 'hidden' : 'muted';
+    const off = track[key];
+    return (
+      <div className="tl-head compact" style={{ width }} title={name}>
+        <button
+          className={`mini ${off ? 'active' : ''}`}
+          aria-label={`${name}: ${key === 'hidden' ? (off ? 'show' : 'hide') : off ? 'unmute' : 'mute'}`}
+          onClick={() => toggle(key)}
+        >
+          <Icon name={key === 'hidden' ? (off ? 'eyeOff' : icon) : off ? 'mute' : icon} size={16} />
+        </button>
+      </div>
+    );
+  }
   return (
-    <div className="tl-head" style={{ width: HEAD_W }}>
+    <div className="tl-head" style={{ width }} title={name}>
       <span className="tl-head-name">
         <Icon name={icon} size={14} />
         {name}
@@ -507,6 +590,10 @@ const ClipView = memo(function ClipView({
       className={`clip kind-${clip.kind} ${selected ? 'selected' : ''} ${dimmed ? 'dimmed' : ''}`}
       style={{ left: clip.start * pps, width, height }}
       onPointerDown={(e) => onPointerDown(e, clip, 'move')}
+      onClick={(e) => {
+        e.stopPropagation();
+        select(clip.id);
+      }}
       title={clip.name}
     >
       <div className="clip-body">

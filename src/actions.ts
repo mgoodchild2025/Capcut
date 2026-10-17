@@ -2,7 +2,7 @@ import { engine } from './engine/engine';
 import { convertForPlayback } from './engine/convert';
 import { buildFilmstrip, buildWaveform, importFile, UnplayableVideoError } from './engine/media';
 import { deleteAssetRecord, loadDraft, saveAssetBlob, saveProject } from './engine/persist';
-import { createMediaClip, createProject, createStickerClip, createTextClip } from './model/factory';
+import { createGraphicClip, createMediaClip, createProject, createStickerClip, createTextClip } from './model/factory';
 import {
   activeLayers,
   appendToMain,
@@ -438,6 +438,48 @@ export async function freezeFrameSelected() {
   });
 }
 
+/**
+ * The analyst's pen: freezes the frame under the playhead (when there's video there) and puts a
+ * telestrator over it, ready to draw on in the preview.
+ */
+export async function addTelestrator(freeze = true): Promise<void> {
+  const s = get();
+  const t = s.currentTime;
+  const main = s.project.tracks.find((tr) => tr.main);
+  const sel = selectedClip(s);
+  const under =
+    sel?.kind === 'video' && t >= sel.start && t <= clipEnd(sel)
+      ? sel
+      : s.project.clips.find((c) => c.trackId === main?.id && c.kind === 'video' && t >= c.start && t < clipEnd(c));
+  const colors: [string, string] = (s.project.clips.find((c) => c.graphic)?.graphic?.colors as [string, string] | undefined) ?? ['#111827', '#ffd400'];
+  const place = (start: number, duration: number) => {
+    const tele = createGraphicClip({ type: 'telestrator', colors, text: {}, marks: [] }, start, duration, '');
+    edit((p) => placeClip(p, tele));
+    select(tele.id);
+    engine.pause();
+    engine.seek(start + 0.05);
+    useEditor.setState({ draw: { tool: 'circle', color: colors[1] } });
+  };
+  if (!freeze || !under?.assetId) {
+    place(t, 3);
+    return;
+  }
+  const asset = s.assets[under.assetId];
+  await runTask('Freezing frame', async () => {
+    const { captureFrame } = await import('./engine/frames');
+    const { sourceTimeAt } = await import('./model/timing');
+    const png = await captureFrame(asset, Math.min(sourceTimeAt(under, t), asset.duration - 0.01));
+    const still = await importBlob(png, `${baseName(asset.name)} freeze.png`);
+    if (!still) return;
+    // Keep the frame where the video had it at this moment (it may have been panning).
+    const local = t - under.start;
+    const transform = { ...under.transform, x: valueAt(under, 'x', local), y: valueAt(under, 'y', local), scale: valueAt(under, 'scale', local) };
+    const clip = { ...createMediaClip(still), duration: 3, transform, fit: under.fit, filter: under.filter, adjust: { ...under.adjust }, crop: under.crop, flipH: under.flipH, flipV: under.flipV };
+    edit((p) => insertRipple(p, under.trackId, t, clip));
+    place(t, 3);
+  });
+}
+
 /** Pans the selected clip to follow the action, for footage wider than the project frame. */
 export async function autoReframeSelected() {
   const sel = selectedClip(get());
@@ -609,6 +651,42 @@ export function setSpotlightHold(hold: number) {
   const sel = selectedClip(get());
   if (!sel) return;
   edit((p) => setHold(p, sel.id, hold));
+}
+
+/**
+ * Tracks the spotlighted player through the selected clip: a marker with their label follows
+ * them, and footage wider than the frame pans to keep them in view.
+ */
+export async function followSelectedPlayer(): Promise<void> {
+  const sel = selectedClip(get());
+  const asset = sel?.assetId ? get().assets[sel.assetId] : undefined;
+  if (!sel || sel.kind !== 'video' || !sel.spotlight || !asset) return;
+  const sp = sel.spotlight;
+  await runTask('Following your player', async (_report, signal) => {
+    const { trackPlayer } = await import('./ai/track');
+    const { followKeyframes, needsReframe } = await import('./ai/reframe').then(async (m) => ({ ...m, ...(await import('./ai/reframeCore')) }));
+    const { sourceSpan } = await import('./model/timing');
+    const path = await trackPlayer(asset, sel.inPoint, sel.inPoint + sourceSpan(sel) + 0.1, { t: sel.inPoint + 0.05, x: sp.x, y: sp.y }, signal);
+    if (!path.length) throw new Error('No frames to follow');
+    const { width: W, height: H } = get().project.settings;
+    edit((p) => {
+      const c = p.clips.find((x) => x.id === sel.id);
+      if (!c) return p;
+      let patch: Partial<Clip> = { follow: { path, color: sp.color, label: sp.label } };
+      // Pan only footage that's cropped by the frame, and only if the clip isn't already animated sideways.
+      if (c.fit === 'cover' && needsReframe(asset, W, H) && !c.keyframes?.x?.length) {
+        const keys = followKeyframes(c, asset, W, H, path);
+        if (keys.length) patch = { ...patch, transform: { ...c.transform, x: keys[0].v }, keyframes: { ...c.keyframes, x: keys } };
+      }
+      return updateClipById(p, sel.id, patch);
+    });
+    toast('Following your player through the clip');
+  });
+}
+
+export function stopFollowingSelected() {
+  const sel = selectedClip(get());
+  if (sel) edit((p) => updateClipById(p, sel.id, { follow: undefined }));
 }
 
 function engineSeek(t: number) {
@@ -876,10 +954,15 @@ export interface WizardResult {
   musicId: string | null;
   /** Pan wide footage to follow the action in narrower reels. */
   follow?: boolean;
+  /** Also make a reel in this style for each player credited with a play (team reels). */
+  playerReels?: import('./templates/reel').ReelStyle;
+  /** Track each spotted player through their play (a marker follows them; narrow reels pan with them). */
+  followPlayer?: boolean;
 }
 
 /** Generates cards and sound, then lays out the reel in the current project (undoable). */
 export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
+  let madePlayerReels = 0;
   const ok = await runTask('Building your reel', async (report) => {
     const { REEL_STYLES, buildReel } = await import('./templates/reel');
     const style = REEL_STYLES.find((s) => s.id === w.style)!;
@@ -897,8 +980,9 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     // Plays to auto-follow: wide footage going into a narrower frame, with no spotted player to centre on.
     const { needsReframe, trackAction } = await import('./ai/reframe');
     const toTrack = w.follow ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => !c.spotlight && assetOf(c.assetId) && needsReframe(assetOf(c.assetId)!, W, H)) : [];
+    const toFollow = w.followPlayer !== false ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => c.spotlight && assetOf(c.assetId)?.kind === 'video') : [];
     let step = 0;
-    const steps = 4 + toCut.length + toTrack.length + (w.musicId ? 1 : 0);
+    const steps = 4 + toCut.length + toTrack.length + toFollow.length + (w.musicId ? 1 : 0);
 
     const fromDataUrl = async (url: string | undefined, name: string) => (url ? importBlob(await (await fetch(url)).blob(), name) : null);
     const logo = await fromDataUrl(w.info.logo, 'Team logo.png');
@@ -981,37 +1065,93 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
       }
       report(++step / steps);
     }
+    if (toFollow.length) {
+      const { trackPlayer } = await import('./ai/track');
+      for (const [c, i] of toFollow) {
+        try {
+          clips[i] = { ...clips[i], path: await trackPlayer(assetOf(c.assetId)!, c.inPoint, c.inPoint + c.duration, { t: c.inPoint + 0.05, ...c.spotlight! }) };
+        } catch (e) {
+          console.warn('Could not follow the player', e);
+        }
+        report(++step / steps);
+      }
+    }
 
     const photo = media.find((m) => m.key === 'photo');
-    const built = buildReel(
-      {
-        style: w.style,
-        info: w.info,
-        clips,
-        cards: {
-          music: music?.id,
-          whoosh: whoosh?.id,
-          impact: impact?.id,
-          logo: logo?.id,
-          oppLogo: oppLogo?.id,
-          photo: photo ? finalId(photo.assetId) : undefined,
-          players: Object.fromEntries(media.filter((m) => m.key !== 'photo').map((m) => [m.key, finalId(m.assetId)])),
-          cutouts,
-          depths,
-        },
+    const input = {
+      style: w.style,
+      info: w.info,
+      clips,
+      cards: {
+        music: music?.id,
+        whoosh: whoosh?.id,
+        impact: impact?.id,
+        logo: logo?.id,
+        oppLogo: oppLogo?.id,
+        photo: photo ? finalId(photo.assetId) : undefined,
+        players: Object.fromEntries(media.filter((m) => m.key !== 'photo').map((m) => [m.key, finalId(m.assetId)])),
+        cutouts,
+        depths,
       },
-      get().assets,
-    );
+    };
+    const built = buildReel(input, get().assets);
     const current = get().project;
     commit({ ...built, id: current.id, createdAt: current.createdAt });
+    if (w.playerReels && style.roster === 'credits') madePlayerReels = await savePlayerReels(input, w.playerReels);
     engine.pause();
     // Land on the finished title rather than its first, still-animating frame.
     engine.seek(2.2);
     select(null);
     return true;
   });
-  if (ok) toast('Your reel is ready. Press play!');
+  if (ok)
+    toast(
+      madePlayerReels
+        ? `Your reel is ready, plus ${madePlayerReels} player reel${madePlayerReels === 1 ? '' : 's'} in your drafts on the home screen.`
+        : 'Your reel is ready. Press play!',
+    );
   return !!ok;
+}
+
+/**
+ * Saves a reel per credited player as drafts of their own. They use the media already stored
+ * for this project (the game video is never copied), so each draft costs almost no space.
+ */
+async function savePlayerReels(team: import('./templates/reel').ReelInput, style: import('./templates/reel').ReelStyle): Promise<number> {
+  const [{ buildReel, REEL_STYLES }, { playerReelInputs }, { mediaRefs, remapClip }, { saveDraftShared }, { uid }] = await Promise.all([
+    import('./templates/reel'),
+    import('./templates/playerReels'),
+    import('./engine/projectFile'),
+    import('./engine/persist'),
+    import('./utils'),
+  ]);
+  const title = REEL_STYLES.find((s) => s.id === style)!.title;
+  const assets = get().assets;
+  let made = 0;
+  for (const { player, input } of playerReelInputs(team, style)) {
+    const built = buildReel(input, assets);
+    const ids = new Map<string, string>();
+    for (const c of built.clips) for (const id of mediaRefs(c)) if (assets[id] && !ids.has(id)) ids.set(id, uid('a_'));
+    const now = Date.now();
+    const project = {
+      ...built,
+      id: uid('p_'),
+      name: `${input.info.name} ${title}`,
+      createdAt: now,
+      updatedAt: now,
+      clips: built.clips.map((c) => remapClip(c, (id) => ids.get(id) ?? id)),
+    };
+    const shared = [...ids].map(([from, to]) => ({ ...assets[from], id: to, blob: assets[from].blob ?? from }));
+    const face = input.cards.photo ? assets[input.cards.photo] : undefined;
+    const thumbnail = face?.thumbnail ?? assets[input.clips[0].assetId]?.thumbnail;
+    try {
+      await saveDraftShared(project, shared, thumbnail);
+      made++;
+    } catch (e) {
+      console.warn(`Couldn't save ${player.name}'s reel`, e);
+    }
+  }
+  return made;
 }
 
 /** True when an image has see-through areas (a cut-out player rather than a photo). */

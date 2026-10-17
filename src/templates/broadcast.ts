@@ -5,12 +5,13 @@
 import { followKeyframes } from '../ai/reframeCore';
 import { createGraphicClip, createMediaClip, createProject } from '../model/factory';
 import { addTrack, appendToMain, clipEnd, getMainTrack, placeClip } from '../model/ops';
-import { CURVE_PRESETS, durationForSpan } from '../model/timing';
-import type { Asset, Clip, GraphicSpec, GraphicType, Project, TransitionKind } from '../model/types';
+import { CURVE_PRESETS, durationForSpan, transformAt } from '../model/timing';
+import type { Asset, Clip, GraphicSpec, GraphicType, Project, TeleMark, TransitionKind } from '../model/types';
+import { followAt } from '../ai/trackCore';
 import { uid } from '../utils';
 import { playedSets, sides } from './match';
 import { finalTotals, sportOf } from './sports';
-import type { ReelInfo, ReelInput, ReelStyle, RosterPlayer } from './reel';
+import type { ReelClip, ReelInfo, ReelInput, ReelStyle, RosterPlayer } from './reel';
 import { REEL_STYLES } from './reel';
 import { barFitter, upper } from './shared';
 
@@ -51,6 +52,35 @@ export function openText(styleId: ReelStyle, info: ReelInfo): { kicker: string; 
           ? [num && `#${num}`, info.position, info.club || info.school].filter(Boolean).join('  ·  ')
           : [info.gradYear && `Class of ${info.gradYear}`, info.club, info.school].filter(Boolean).join('  ·  ');
   return { kicker, title, sub };
+}
+
+/** Where a point of the source frame lands in the project frame, at the clip's first frame (fractions). */
+function onScreen(clip: Clip, a: Asset, W: number, H: number, sx: number, sy: number): [number, number] {
+  const tr = transformAt(clip, 0);
+  const k = (clip.fit === 'cover' ? Math.max(W / a.width, H / a.height) : Math.min(W / a.width, H / a.height)) * tr.scale;
+  const x = W / 2 + tr.x * W + (sx - 0.5) * a.width * k;
+  const y = H / 2 + tr.y * H + (sy - 0.5) * a.height * k;
+  return [x / W, y / H];
+}
+
+/** The analyst's marks for a replay: a circle round the player and an arrow in from the open side. */
+function telestration(clip: Clip, a: Asset, W: number, H: number, at: { x: number; y: number }, color: string): TeleMark[] {
+  const [fx, fy] = onScreen(clip, a, W, H, at.x, at.y);
+  const S = Math.min(W, H);
+  // Ring a player-sized area (players are roughly a fifth of the footage's height).
+  const rPx = Math.max(S * 0.07, Math.min(S * 0.16, H * 0.085));
+  const ring: TeleMark = { kind: 'circle', pts: [[fx, fy], [fx + rPx / W, fy]], color };
+  // The arrow comes from whichever side has more room, from above.
+  const dir = fx > 0.5 ? -1 : 1;
+  const len = S * 0.22;
+  const ang = Math.PI / 4;
+  const tipX = fx * W + dir * Math.cos(ang) * rPx * 1.15;
+  const tipY = fy * H - Math.sin(ang) * rPx * 1.15;
+  const fromX = tipX + dir * Math.cos(ang) * len;
+  const fromY = tipY - Math.sin(ang) * len;
+  const clampF = (v: number) => Math.min(0.97, Math.max(0.03, v));
+  const arrow: TeleMark = { kind: 'arrow', pts: [[clampF(fromX / W), clampF(fromY / H)], [tipX / W, tipY / H]], color };
+  return [ring, arrow];
 }
 
 const splitName = (name: string): [string, string] => {
@@ -142,6 +172,24 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
   const byKey = new Map(roster.map((r) => [r.key, r] as [string, RosterPlayer]));
   const playClips = input.style === 'lineup' ? [] : input.clips.filter((rc) => assets[rc.assetId]);
   if (playClips.length) stinger();
+  const marker = num ? `#${num}` : upper(first || last);
+  // Narrower frames: centre on the spotted player, or follow them or the action, or (4:5 without
+  // any of those) letterbox. A followed player also gets a marker. Call once the timing is final.
+  const frame = (clip: Clip, rc: ReelClip, a: Asset): Clip => {
+    if (a.kind === 'video' && a.width && a.width / a.height > (W / H) * 1.05 && (portrait || rc.spotlight || rc.track)) {
+      const frameW = (a.width / a.height) * (H / W);
+      const slack = (frameW - 1) / 2;
+      const at = rc.path?.length ? followAt(rc.path, clip.inPoint) : rc.spotlight;
+      clip = { ...clip, fit: 'cover', transform: { ...clip.transform, x: Math.max(-slack, Math.min(slack, (0.5 - (at?.x ?? 0.5)) * frameW)) } };
+      const path = rc.path?.length ? rc.path : !rc.spotlight ? rc.track : undefined;
+      if (path?.length) {
+        const keys = followKeyframes(clip, a, W, H, path);
+        if (keys.length) clip = { ...clip, transform: { ...clip.transform, x: keys[0].v }, keyframes: { ...clip.keyframes, x: keys } };
+      }
+    }
+    if (rc.path?.length && a.kind === 'video') clip = { ...clip, follow: { path: rc.path, color: info.colors[1], label: marker } };
+    return clip;
+  };
   playClips.forEach((rc, i) => {
     const a = assets[rc.assetId];
     const available = a.kind === 'image' ? Infinity : Math.max(0.3, a.duration - rc.inPoint);
@@ -157,17 +205,7 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
       clip.hold = hold;
       clip.spotlight = { x: rc.spotlight!.x, y: rc.spotlight!.y, r: 0.11, color: info.colors[1], label: num ? `#${num}` : upper(first || last), zoom: true };
     }
-    // Narrower frames: centre on the spotted player, or follow the action, or (4:5 without either) letterbox.
-    if (a.kind === 'video' && a.width && a.width / a.height > (W / H) * 1.05 && (portrait || rc.spotlight || rc.track)) {
-      const frameW = (a.width / a.height) * (H / W);
-      const slack = (frameW - 1) / 2;
-      clip.fit = 'cover';
-      clip.transform = { ...clip.transform, x: Math.max(-slack, Math.min(slack, (0.5 - (rc.spotlight?.x ?? 0.5)) * frameW)) };
-      if (!rc.spotlight && rc.track?.length) {
-        const keys = followKeyframes(clip, a, W, H, rc.track);
-        if (keys.length) clip = { ...clip, transform: { ...clip.transform, x: keys[0].v }, keyframes: { ...clip.keyframes, x: keys } };
-      }
-    }
+    clip = frame(clip, rc, a);
     const useStinger = look.stingerEvery > 0 && i > 0 && i % look.stingerEvery === 0;
     clip.transition = i === 0 || useStinger ? 'none' : look.transitions[i % look.transitions.length];
     clip.transitionDur = look.beat ? Math.min(0.3, beat || 0.3) : 0.4;
@@ -196,13 +234,34 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
       const [us, them] = sides(input);
       overlays.push(createGraphicClip(spec('scoreBug', { usName: us, themName: them, us: m[1], them: m[2], set: rc.set ? String(rc.set) : '', periodLabel: sport.scoring.short }), start, clip.duration, `${m[1]}-${m[2]}`));
     }
+
+    // Instant replay: the key moment again in slow motion, with the analyst's pen on the player.
+    if (rc.replay && a.kind === 'video') {
+      const span = Math.min(rc.duration, available);
+      const win = Math.min(2.4, span);
+      // The play's decisive moment is usually a little past its middle.
+      const from = rc.inPoint + Math.max(0, Math.min(span - win, span * 0.62 - win / 2));
+      const at = rc.path?.length ? followAt(rc.path, from) : rc.spotlight;
+      const hold = at ? 1.4 : 0;
+      let r: Clip = { ...createMediaClip(a), inPoint: from, speed: 0.5, volume: 0, hold: hold || undefined, duration: hold + win / 0.5, transition: 'none' };
+      // Beat-cut reels keep their cuts on the bar.
+      r.duration = fit(r.duration, hold + Math.max(0.3, a.duration - from) / 0.5);
+      r = frame(r, rc, a);
+      const rStart = end();
+      p = appendToMain(p, r);
+      overlays.push(createGraphicClip(spec('replay', { tag: rc.tag ?? '' }), Math.max(0, rStart - 0.36), r.duration + 0.36, 'Replay'));
+      if (at) {
+        const marks = telestration(r, a, W, H, at, info.colors[1]);
+        overlays.push(createGraphicClip(spec('telestrator', {}, { marks }), rStart + 0.15, hold + 0.6, 'Telestrator'));
+      }
+    }
   });
 
   // ---------- stats ----------
   const stats = info.stats.filter(([k, v]) => k.trim() && v.trim());
   if (stats.length && input.style !== 'lineup') {
     stinger();
-    const title = input.style === 'spotlight' ? 'By the numbers' : team ? 'Team stats' : 'Season stats';
+    const title = info.statsTitle || (input.style === 'spotlight' ? 'By the numbers' : team ? 'Team stats' : 'Season stats');
     full('stats', { title, sub: team ? [name, info.season].filter(Boolean).join(' · ') : [name, num && `#${num}`].filter(Boolean).join(' ') }, fit(Math.min(6.5, 3.6 + stats.length * 0.4)), { rows: stats });
   }
 

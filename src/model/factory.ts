@@ -58,6 +58,8 @@ export const GRAPHIC_NAMES: Record<import('./types').GraphicType, string> = {
   roster: 'Roster board',
   final: 'Final score',
   closer: 'Closer',
+  replay: 'Replay',
+  telestrator: 'Telestrator',
 };
 
 export function createGraphicClip(graphic: import('./types').GraphicSpec, start: number, duration: number, label = '', assetId?: string): Clip {

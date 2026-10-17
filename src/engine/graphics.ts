@@ -3,7 +3,7 @@
  * player cards, score bug, stat/roster/final boards and a closer. Everything is a pure function of
  * the clip's local time, so the preview and the export draw exactly the same frames.
  */
-import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
+import type { Clip, GraphicLook, GraphicSpec, TeleMark } from '../model/types';
 import { drawLivePhoto, livePhotoLayers } from './livePhoto';
 
 export type ImageLookup = (assetId: string) => CanvasImageSource | null;
@@ -29,6 +29,13 @@ interface G {
   /** The clip's own media (player photo or clip), and its asset id. */
   media: CanvasImageSource | null;
   mediaId?: string;
+  clipId: string;
+}
+
+/** The telestrator being drawn on: shown with every mark complete, so new strokes appear at once. */
+let editingTele: string | null = null;
+export function setTelestratorEditing(id: string | null) {
+  editingTele = id;
 }
 
 // ---------------------------------------------------------------------------
@@ -1352,6 +1359,175 @@ function drawCloser(g: G) {
   }
 }
 
+/**
+ * Instant replay: a wipe in team colours with REPLAY across it covers the cut back into the
+ * action, then a REPLAY bug with a blinking dot sits in the corner until a quick wipe out.
+ */
+function drawReplay(g: G) {
+  const { ctx, W, H, S, t, d, c1 } = g;
+  const sk = H * 0.4 * SKEW;
+  // In: fully covered at 0.35s (where the cut is), clear by 0.75s.
+  const bars: [string | CanvasGradient, number][] =
+    g.look === 'classic'
+      ? [[shade(c1, -0.45), 0]]
+      : [
+          [accent(g), 0],
+          ['#ffffff', 0.05],
+          [shade(c1, -0.35), 0.1],
+        ];
+  for (const [col, lag] of bars) {
+    const inK = eInOut(clamp01((t - lag) / 0.33));
+    const outK = eInOut(clamp01((t - 0.4 - lag * 0.6) / 0.33));
+    const lead = lerp(W + sk, -sk, inK);
+    const tail = lerp(W + sk * 2, -sk, outK);
+    if (tail <= lead) continue;
+    ctx.fillStyle = col;
+    para(ctx, lead - sk, 0, tail - lead + sk, H, sk);
+    ctx.fill();
+  }
+  const peak = 1 - Math.abs(t - 0.36) / 0.2;
+  if (peak > 0) {
+    ctx.save();
+    ctx.globalAlpha = clamp01(peak * 2);
+    const size = fit(ctx, 'REPLAY', W * 0.8, S * (g.portrait ? 0.2 : 0.22));
+    headline(g, 'REPLAY', W / 2, H / 2 + size * 0.33, size, { color: '#fff' });
+    ctx.restore();
+  }
+  // Corner bug.
+  const bin = eExpo(seg(t, 0.75, 1.15));
+  const bout = eInOut(seg(t, d - 0.45, d - 0.15));
+  const k = bin * (1 - bout);
+  if (k > 0) {
+    const fs = S * 0.034;
+    const x = S * 0.05;
+    const y = g.portrait ? H * 0.06 : S * 0.06;
+    font(ctx, fs, 900);
+    tracking(ctx, fs * 0.16);
+    const tw = ctx.measureText('REPLAY').width;
+    tracking(ctx, 0);
+    const bw = tw + fs * 3.1;
+    const bh = fs * 1.7;
+    ctx.save();
+    ctx.globalAlpha *= k;
+    ctx.fillStyle = shade(c1, -0.25, 0.92);
+    para(ctx, x - (1 - k) * bw * 0.4, y, bw, bh, bh * 0.35 * SKEW);
+    ctx.fill();
+    ctx.fillStyle = accent(g);
+    para(ctx, x - (1 - k) * bw * 0.4, y + bh - Math.max(2, fs * 0.12), bw, Math.max(2, fs * 0.12), 0);
+    ctx.fill();
+    // Blinking dot, as on a broadcast.
+    const blink = Math.sin(t * Math.PI * 2.2) > -0.3 ? 1 : 0.25;
+    ctx.fillStyle = `rgba(239, 68, 68, ${blink})`;
+    ctx.beginPath();
+    ctx.arc(x + fs * 0.95, y + bh / 2, fs * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    label(g, 'REPLAY', x + fs * 1.6, y + bh / 2 + fs * 0.36, fs, '#fff', 'left', 900, 0.16);
+    const tag = (g.spec.text.tag || '').toUpperCase();
+    if (tag) {
+      const ts = fs * 0.62;
+      label(g, tag, x + fs * 0.35, y + bh + ts * 1.5, ts, '#fff', 'left', 800, 0.18);
+    }
+    ctx.restore();
+  }
+}
+
+/** Where a mark has got to after `p` (0..1) of drawing it, as a list of points in pixels. */
+function partialPolyline(pts: [number, number][], p: number): [number, number][] {
+  if (pts.length < 2 || p >= 1) return pts;
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    lens.push(l);
+    total += l;
+  }
+  let left = total * p;
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    if (left >= lens[i - 1]) {
+      out.push(pts[i]);
+      left -= lens[i - 1];
+      continue;
+    }
+    const k = lens[i - 1] ? left / lens[i - 1] : 0;
+    out.push([lerp(pts[i - 1][0], pts[i][0], k), lerp(pts[i - 1][1], pts[i][1], k)]);
+    break;
+  }
+  return out;
+}
+
+/** The pixel path a mark traces (circles as a slightly overshooting hand-drawn loop). */
+export function markPath(kind: TeleMark['kind'], pts: [number, number][], W: number, H: number): [number, number][] {
+  const px = pts.map(([x, y]) => [x * W, y * H] as [number, number]);
+  if (kind === 'circle' && px.length >= 2) {
+    const [[cx, cy], [ex, ey]] = px;
+    const r = Math.max(4, Math.hypot(ex - cx, ey - cy));
+    const out: [number, number][] = [];
+    const n = 48;
+    for (let i = 0; i <= n; i++) {
+      const a = -Math.PI / 2 + (i / n) * Math.PI * 2.12;
+      // A touch flatter than round, and the loop spirals in slightly, like a pen stroke.
+      const rr = r * (1 - 0.06 * (i / n));
+      out.push([cx + Math.cos(a) * rr * 1.08, cy + Math.sin(a) * rr * 0.92]);
+    }
+    return out;
+  }
+  if ((kind === 'arrow' || kind === 'line') && px.length >= 2) return [px[0], px[px.length - 1]];
+  return px;
+}
+
+/**
+ * Telestrator: the analyst's pen. Each mark draws itself in turn with a glowing stroke, arrows
+ * finish with a head, and everything fades at the end.
+ */
+function drawTelestrator(g: G) {
+  const { ctx, W, H, S, t, d } = g;
+  const marks = g.spec.marks ?? [];
+  const editing = editingTele === g.clipId;
+  const fade = editing ? 1 : 1 - eInOut(seg(t, d - 0.35, d));
+  if (fade <= 0) return;
+  const lw = S * 0.009;
+  ctx.save();
+  ctx.globalAlpha *= fade;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  marks.forEach((m, i) => {
+    const p = editing ? 1 : eOut(seg(t, 0.2 + i * 0.5, 0.2 + i * 0.5 + (m.kind === 'pen' ? 0.6 : 0.4)));
+    if (p <= 0) return;
+    const path = partialPolyline(markPath(m.kind, m.pts, W, H), p);
+    if (path.length < 2) return;
+    const stroke = (width: number, color: string, blur: number) => {
+      ctx.lineWidth = width;
+      ctx.strokeStyle = color;
+      ctx.shadowColor = m.color;
+      ctx.shadowBlur = blur;
+      ctx.beginPath();
+      ctx.moveTo(path[0][0], path[0][1]);
+      for (let k = 1; k < path.length; k++) ctx.lineTo(path[k][0], path[k][1]);
+      ctx.stroke();
+    };
+    stroke(lw * 1.6, rgba(m.color, 0.35), lw * 3);
+    stroke(lw, m.color, lw * 1.5);
+    stroke(lw * 0.35, 'rgba(255,255,255,0.85)', 0);
+    if (m.kind === 'arrow' && p > 0.85) {
+      const [ax, ay] = path[path.length - 2];
+      const [bx, by] = path[path.length - 1];
+      const ang = Math.atan2(by - ay, bx - ax);
+      const hs = lw * 4.2 * eBack(seg(p, 0.85, 1));
+      ctx.shadowBlur = lw * 1.5;
+      ctx.shadowColor = m.color;
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.moveTo(bx + Math.cos(ang) * hs * 0.4, by + Math.sin(ang) * hs * 0.4);
+      ctx.lineTo(bx + Math.cos(ang + 2.55) * hs, by + Math.sin(ang + 2.55) * hs);
+      ctx.lineTo(bx + Math.cos(ang - 2.55) * hs, by + Math.sin(ang - 2.55) * hs);
+      ctx.closePath();
+      ctx.fill();
+    }
+  });
+  ctx.restore();
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -1362,6 +1538,8 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   roster: drawRoster,
   final: drawFinal,
   closer: drawCloser,
+  replay: drawReplay,
+  telestrator: drawTelestrator,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
@@ -1399,6 +1577,7 @@ export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: nu
     img,
     media,
     mediaId: clip.assetId,
+    clipId: clip.id,
   };
   LOOK = look;
   HEAD = look === 'classic' ? SANS : DISPLAY;

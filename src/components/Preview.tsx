@@ -1,13 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { updateSelected } from '../actions';
 import { engine } from '../engine/engine';
+import { setTelestratorEditing } from '../engine/graphics';
 import { hitTest, type DrawBox } from '../engine/render';
 import { projectDuration } from '../model/ops';
-import { beginGesture, endGesture, select, toast, useEditor } from '../store';
+import type { TeleMark } from '../model/types';
+import { beginGesture, endGesture, select, setShowStats, toast, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatTimecode } from '../utils';
 
 type Drag =
+  | { mode: 'draw' }
   | { mode: 'move'; startX: number; startY: number; x0: number; y0: number }
   | { mode: 'scale'; cx: number; cy: number; d0: number; s0: number }
   | { mode: 'rotate'; cx: number; cy: number; a0: number; r0: number }
@@ -24,6 +27,7 @@ export function Preview() {
   const selectedId = useEditor((s) => s.selectedId);
   const pick = useEditor((s) => s.pick);
   const task = useEditor((s) => s.task);
+  const showStats = useEditor((s) => s.showStats);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [box, setBox] = useState<DrawBox | null>(null);
   const [guides, setGuides] = useState({ v: false, h: false });
@@ -125,9 +129,38 @@ export function Preview() {
     useEditor.setState({ pick: null });
   };
 
+  /** The selected telestrator, when the pen is out. */
+  const drawingOn = () => {
+    const st = useEditor.getState();
+    const c = st.draw ? st.project.clips.find((x) => x.id === st.selectedId) : undefined;
+    return c?.graphic?.type === 'telestrator' ? c : null;
+  };
+  /** A point as fractions of the telestrator's frame (it may have been moved or scaled). */
+  const teleFraction = (pt: Pt): [number, number] => {
+    const f = pointInSelected(pt);
+    const fx = f ? f.fx : pt.x / settings.width;
+    const fy = f ? f.fy : pt.y / settings.height;
+    return [+Math.min(1, Math.max(0, fx)).toFixed(4), +Math.min(1, Math.max(0, fy)).toFixed(4)];
+  };
+
   const onStageDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const pt = toProject(e);
+    const tele = drawingOn();
+    if (tele) {
+      const { tool, color } = useEditor.getState().draw!;
+      const at = teleFraction(pt);
+      beginGesture();
+      gestureOpen.current = true;
+      updateSelected((c) => ({ graphic: { ...c.graphic!, marks: [...(c.graphic!.marks ?? []), { kind: tool, pts: [at, at], color }] } }));
+      drag.current = { mode: 'draw' };
+      try {
+        (e.target as Element).setPointerCapture(e.pointerId);
+      } catch {
+        /* the pointer is already gone */
+      }
+      return;
+    }
     const pick = useEditor.getState().pick;
     if (pick) {
       handlePick(pick, pt);
@@ -182,6 +215,23 @@ export function Preview() {
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, pt);
     const d = drag.current;
     if (!d) return;
+    if (d.mode === 'draw') {
+      const at = teleFraction(pt);
+      updateSelected((c) => {
+        const marks = [...(c.graphic!.marks ?? [])];
+        const m = marks[marks.length - 1];
+        if (!m) return {};
+        if (m.kind === 'pen') {
+          const last = m.pts[m.pts.length - 1];
+          if (Math.hypot(at[0] - last[0], at[1] - last[1]) < 0.006) return {};
+          marks[marks.length - 1] = { ...m, pts: [...m.pts, at] };
+        } else {
+          marks[marks.length - 1] = { ...m, pts: [m.pts[0], at] };
+        }
+        return { graphic: { ...c.graphic!, marks } };
+      });
+      return;
+    }
     if (d.mode === 'pinch') {
       if (pointers.current.size < 2) return;
       const [a, b] = [...pointers.current.values()];
@@ -227,16 +277,43 @@ export function Preview() {
       if (drag.current?.mode === 'pinch') drag.current = null;
       return;
     }
+    if (drag.current?.mode === 'draw') {
+      // A tap rather than a stroke leaves nothing behind.
+      updateSelected((c) => {
+        const marks = c.graphic!.marks ?? [];
+        const m = marks[marks.length - 1];
+        if (!m) return {};
+        const [a, b] = [m.pts[0], m.pts[m.pts.length - 1]];
+        const tiny = m.kind === 'pen' ? m.pts.length < 3 : Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.015;
+        return tiny ? { graphic: { ...c.graphic!, marks: marks.slice(0, -1) } } : {};
+      });
+    }
     if (gestureOpen.current) endGesture();
     gestureOpen.current = false;
     drag.current = null;
   };
 
+  // Show the telestrator being drawn on complete, and keep the playhead on it.
+  const draw = useEditor((s) => s.draw);
+  useEffect(() => {
+    const tele = draw ? drawingOn() : null;
+    // Selecting something else puts the pen away.
+    if (draw && !tele) useEditor.setState({ draw: null });
+    setTelestratorEditing(tele?.id ?? null);
+    if (tele) {
+      const t = useEditor.getState().currentTime;
+      if (t < tele.start || t >= tele.start + tele.duration) engine.seek(tele.start + Math.min(0.5, tele.duration / 2));
+    }
+    engine.invalidate();
+    return () => setTelestratorEditing(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draw, selectedId]);
+
   return (
     <section className="preview panel">
       <div className="preview-wrap" ref={wrapRef}>
         <div
-          className={`stage ${pick ? 'picking' : ''}`}
+          className={`stage ${pick || draw ? 'picking' : ''}`}
           ref={stageRef}
           style={{ width: size.w, height: size.h }}
           onPointerDown={onStageDown}
@@ -275,7 +352,7 @@ export function Preview() {
           )}
           {guides.v && <div className="guide v" />}
           {guides.h && <div className="guide h" />}
-          {box && (
+          {box && !draw && (
             <div
               className="sel-box"
               style={{
@@ -301,10 +378,127 @@ export function Preview() {
               </span>
             </div>
           )}
+          {showStats && <PlaybackStats />}
         </div>
+        {/* Under the whole preview rather than the frame: a tall frame on a phone is too narrow for it. */}
+        {draw && <PenBar />}
       </div>
       <Transport />
     </section>
+  );
+}
+
+const PEN_TOOLS: { id: TeleMark['kind']; label: string; icon: string }[] = [
+  { id: 'circle', label: 'Circle', icon: 'M12 4a8 7 0 1 0 0.1 0' },
+  { id: 'arrow', label: 'Arrow', icon: 'M5 19L19 5M19 5h-7M19 5v7' },
+  { id: 'line', label: 'Line', icon: 'M5 19L19 5' },
+  { id: 'pen', label: 'Pen', icon: 'M4 17c3-6 5 2 8-3s4-6 8-4' },
+];
+const PEN_COLORS = ['#ffd400', '#ffffff', '#ef4444', '#22d3ee', '#4ade80'];
+
+/** The telestrator's pen, over the preview: pick a mark, a colour, undo, and finish. */
+function PenBar() {
+  const draw = useEditor((s) => s.draw)!;
+  const set = (patch: Partial<NonNullable<typeof draw>>) => useEditor.setState({ draw: { ...draw, ...patch } });
+  const undo = () => updateSelected((c) => (c.graphic?.marks?.length ? { graphic: { ...c.graphic, marks: c.graphic.marks.slice(0, -1) } } : {}));
+  return (
+    <div className="pen-bar" role="toolbar" aria-label="Telestrator" onPointerDown={(e) => e.stopPropagation()}>
+      {PEN_TOOLS.map((t) => (
+        <button key={t.id} className={draw.tool === t.id ? 'on' : ''} aria-pressed={draw.tool === t.id} aria-label={t.label} title={t.label} onClick={() => set({ tool: t.id })}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d={t.icon} />
+          </svg>
+        </button>
+      ))}
+      <span className="pen-sep" />
+      {PEN_COLORS.map((c) => (
+        <button key={c} className={`pen-color ${draw.color === c ? 'on' : ''}`} style={{ background: c }} aria-label={`Colour ${c}`} onClick={() => set({ color: c })} />
+      ))}
+      <span className="pen-sep" />
+      <button onClick={undo} aria-label="Undo last mark" title="Undo last mark">
+        <Icon name="undo" size={15} />
+      </button>
+      <button className="pen-done" onClick={() => useEditor.setState({ draw: null })}>
+        Done
+      </button>
+    </div>
+  );
+}
+
+/** Live playback health, for diagnosing stutter on a real phone. Copy the report and send it on. */
+function PlaybackStats() {
+  const [s, setS] = useState(() => engine.statsSnapshot());
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    const id = setInterval(() => setS(engine.statsSnapshot()), 500);
+    return () => clearInterval(id);
+  }, []);
+  const report = () => {
+    const { project, assets } = useEditor.getState();
+    const media = Object.values(assets)
+      .filter((a) => a.kind === 'video' && !a.internal)
+      .map((a) => `${a.name.split('.').pop()} ${a.width}x${a.height} ${a.duration.toFixed(1)}s ${(a.size / 1e6).toFixed(0)}MB`);
+    const lines = [
+      'ClipForge playback report',
+      `Device: ${navigator.userAgent}`,
+      `Screen: ${screen.width}x${screen.height} @${devicePixelRatio}x`,
+      `Project: ${project.settings.width}x${project.settings.height} ${project.settings.fps}fps, ${project.clips.length} clips, ${projectDuration(project).toFixed(1)}s`,
+      `Video: ${media.join('; ') || 'none'}`,
+      `Frames: ${s.frames} at ${s.fps.toFixed(1)} fps, ${s.slow} slow (>50ms), worst ${Math.round(s.worst)}ms`,
+      `Seeks ${s.seeks}, starts ${s.restarts}, waiting ${(s.stallMs / 1000).toFixed(1)}s`,
+      `Video frames: ${s.dropped ?? '?'} dropped of ${s.decoded ?? '?'}, players ${s.players}, direct ${s.direct ? 'on' : 'off'}`,
+    ];
+    return lines.join('\n');
+  };
+  const copy = async () => {
+    const text = report();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Older iOS: fall back to a selection copy.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const bad = (v: number, warn: number) => (v > warn ? 'bad' : '');
+  return (
+    <div className="pb-stats" onPointerDown={(e) => e.stopPropagation()} role="status" aria-label="Playback stats">
+      <div className="pb-grid">
+        <span>FPS</span>
+        <b className={s.frames > 30 && s.fps < 45 ? 'bad' : ''}>{s.frames ? s.fps.toFixed(0) : '-'}</b>
+        <span>Slow frames</span>
+        <b className={bad(s.slow, 5)}>
+          {s.slow} <small>worst {Math.round(s.worst)}ms</small>
+        </b>
+        <span>Seeks / starts</span>
+        <b className={bad(s.seeks, 3)}>
+          {s.seeks} / {s.restarts}
+        </b>
+        <span>Waiting</span>
+        <b className={bad(s.stallMs, 1500)}>{(s.stallMs / 1000).toFixed(1)}s</b>
+        <span>Dropped</span>
+        <b className={s.dropped && s.decoded && s.dropped / s.decoded > 0.05 ? 'bad' : ''}>
+          {s.dropped ?? '-'} <small>of {s.decoded ?? '-'}</small>
+        </b>
+        <span>Players</span>
+        <b className={bad(s.players, 3)}>
+          {s.players} <small>{s.direct ? 'direct' : 'canvas'}</small>
+        </b>
+      </div>
+      <div className="pb-actions">
+        <button onClick={() => engine.resetStats()}>Reset</button>
+        <button onClick={() => void copy()}>{copied ? 'Copied' : 'Copy report'}</button>
+        <button onClick={() => setShowStats(false)} aria-label="Hide stats">
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -328,9 +522,18 @@ function Transport() {
   const fps = project.settings.fps;
   const atEnd = useEditor((s) => !s.playing && dur > 0 && s.currentTime >= dur - 0.01);
   const label = playing ? 'Pause' : atEnd ? 'Replay' : 'Play';
+  // Press and hold the timecode to show or hide the playback stats.
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdStart = () => {
+    hold.current = setTimeout(() => setShowStats(!useEditor.getState().showStats), 600);
+  };
+  const holdEnd = () => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
+  };
   return (
     <div className="transport">
-      <span className="tc">
+      <span className="tc" onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
         <Timecode fps={fps} />
         <span> / {formatTimecode(dur, fps)}</span>
       </span>

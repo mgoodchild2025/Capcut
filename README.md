@@ -14,6 +14,7 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 - **Score bug**: both teams' logos, scores and the set, quarter, half, inning or period.
 - **Boards**: stats with count-up numbers, a roster wall of player tiles with photos, and a final scoreboard with every set or period (sets won for volleyball, total points, goals or runs elsewhere).
 - **Stingers** in team colours cover section changes, and a **closer** with a logo lockup ends the reel.
+- **Instant replay**: switch on **Replay** for a play and its decisive moment runs again at half speed behind a REPLAY wipe, with a corner bug. When your player is spotted, the replay opens on a freeze where the **telestrator** circles them and draws an arrow in, like a TV analyst.
 - **Four graphics looks**: **Broadcast** (bold TV package), **Championship** (brushed gold, spotlights and sparks), **Neon** (glow and a racing grid) and **Classic** (clean and understated). Switch every graphic at once from the graphic inspector.
 
 1. On the home screen, pick a sport, a look and a template. You can also open the **Sports** tab in the editor.
@@ -30,8 +31,11 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 2. Enter the player or team details, pick team colours and add your **team and opponent logos** (remembered for next time). Player reels take a **photo or short clip** of the player; turn on **Cut out** to remove a photo's background. Optionally enter the **match score**: set scores add the final scoreboard, and a score per play shows the score bug.
 3. Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
 4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them with the sport's plays (Kill, Three, Goal, Home run...) and credit them to players.
-5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them.
+5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them, then **follows them through the play**. An on-device tracker (template matching on small colour frames, run forwards and backwards from your tap) keeps a marker with their number above them, and narrower reels pan with them.
 6. Choose a music track and press **Build my reel**. Select any graphic in the editor to change its words and colours.
+7. **A reel for every player**: a team reel can also make one reel per player credited with a play, as a hype reel, player spotlight or recruiting reel. Each gets their plays, their photo and a stats board counted from the play labels (2 Kills, 1 Ace), and is saved to your drafts. The drafts share the stored game video rather than copying it; the media is freed when the last draft using it is deleted.
+
+In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw** freezes the frame at the playhead and adds a telestrator; **Draw over video** draws on the moving picture. Pick circle, arrow, line or freehand and a colour from the bar under the preview; marks draw themselves in one after another on playback. A clip with a spotlight can also **Follow this player** from its spotlight panel.
 
 ## Editor features
 
@@ -71,6 +75,7 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 | Feature | How |
 | --- | --- |
 | Highlight finder | Signal analysis of audio (whistle tones, crowd level) and video motion. No download. |
+| Player tracking | Colour template matching from your tap, forwards and backwards, smoothed with a local line fit. No download. |
 | Beat detection | Onset envelope plus tempo and phase grid search. No download. |
 | Auto-follow reframing | Motion tracking on tiny frames, smoothed into a camera path. No download. |
 | Captions | Whisper base (Transformers.js, WebGPU or WASM). Downloads about 80 to 150 MB on first use. |
@@ -98,6 +103,8 @@ Use a recent Chrome or Edge for the widest codec support. Firefox and Safari wor
 **iPhone videos (HEVC `.mov`)** import in any browser. When the browser can play the clip, it is used as is. When it can't, ClipForge converts a copy on import, showing progress with a Cancel button: first with hardware decoding through WebCodecs, otherwise with ffmpeg compiled to WebAssembly (`@ffmpeg/core`, served from the app itself and loaded only when needed). The converted copy is what gets saved with the draft, so a clip is only converted once.
 
 **Playback on phones** shows the main video directly instead of copying each frame onto the canvas. The video leads and the timeline clock follows it. Pieces of the same file share one video element, so a plain cut plays straight through without a seek or a restart; a jump cut is pre-rolled on one spare element. Panels that follow the playhead update a few times a second during playback rather than every frame.
+
+**Playback stats**: press and hold the timecode under the preview (or switch on **Playback stats** in the project panel, or add `?stats` to the address) for a live overlay of frame rate, slow frames, seeks and restarts, time spent waiting for video, dropped frames and players in use. **Copy report** puts a summary with the device and media details on the clipboard.
 
 ## Architecture
 

@@ -2,7 +2,9 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # GitHub Pages only accepts deployments from the default branch. While the default is still the
+    # original feature branch, deploy from it too; it is kept identical to main after each merge.
+    branches: [main, claude/video-editor-app]
   workflow_dispatch:
 
 permissions:

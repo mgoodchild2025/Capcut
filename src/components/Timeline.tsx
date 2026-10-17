@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   addAssetToTimeline,
+  addMarkerAtPlayhead,
+  deleteMarker,
   deleteSelected,
   duplicateSelected,
   importFiles,
@@ -10,7 +12,8 @@ import { engine } from '../engine/engine';
 import { WAVEFORM_RATE } from '../engine/media';
 import { clipEnd, moveClip, projectDuration, snapOffset, snapPoints, trimClip } from '../model/ops';
 import { FILTERS, TRANSITIONS } from '../model/presets';
-import type { Asset, Clip, Track } from '../model/types';
+import { CURVE_PRESETS, keyframeTimes } from '../model/timing';
+import type { Asset, Clip, Marker, Track } from '../model/types';
 import { beginGesture, commit, edit, endGesture, redo, select, undo, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { clamp, formatTimecode } from '../utils';
@@ -352,6 +355,9 @@ export function Timeline() {
           <button className="icon-btn" title="Delete (Del)" disabled={!selectedId} onClick={() => deleteSelected()}>
             <Icon name="trash" />
           </button>
+          <button className="icon-btn" title="Add marker (M)" onClick={() => addMarkerAtPlayhead()}>
+            <Icon name="marker" />
+          </button>
           <button className="icon-btn" title="Duplicate (Ctrl+D)" disabled={!selectedId} onClick={duplicateSelected}>
             <Icon name="copy" />
           </button>
@@ -507,7 +513,39 @@ function Ruler({
           {isMajor && <em>{label(t)}</em>}
         </span>
       ))}
+      <Markers pps={pps} />
     </div>
+  );
+}
+
+const NO_MARKERS: Marker[] = [];
+
+function Markers({ pps }: { pps: number }) {
+  const markers = useEditor((s) => s.project.markers) ?? NO_MARKERS;
+  return (
+    <>
+      {markers.map((m) => (
+        <button
+          key={m.id}
+          className="marker"
+          style={{ left: m.t * pps, color: m.color }}
+          title={`${m.label || 'Marker'} at ${formatTimecode(m.t)}. Double-click to remove.`}
+          aria-label={`Marker ${m.label || ''} at ${formatTimecode(m.t)}`}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            engine.pause();
+            engine.seek(m.t);
+          }}
+          onDoubleClick={() => deleteMarker(m.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            deleteMarker(m.id);
+          }}
+        >
+          <Icon name="marker" size={12} fill />
+        </button>
+      ))}
+    </>
   );
 }
 
@@ -611,10 +649,19 @@ const ClipView = memo(function ClipView({
       </div>
       <div className="clip-labels">
         {width > 60 && clip.kind !== 'text' && clip.kind !== 'sticker' && <span className="clip-name">{clip.name}</span>}
-        {clip.speed !== 1 && <span className="clip-badge">{clip.speed}x</span>}
+        {clip.spotlight && <span className="clip-badge spot"><Icon name="target" size={11} /></span>}
+        {clip.curve ? (
+          <span className="clip-badge">{CURVE_PRESETS.find((c) => c.id === clip.curve!.id)?.label ?? 'Curve'}</span>
+        ) : (
+          clip.speed !== 1 && <span className="clip-badge">{clip.speed}x</span>
+        )}
+        {clip.chroma && width > 120 && <span className="clip-badge">Key</span>}
         {filter && width > 90 && <span className="clip-badge">{filter}</span>}
         {clip.volume === 0 && clip.kind !== 'image' && <span className="clip-badge"><Icon name="mute" size={11} /></span>}
       </div>
+      {keyframeTimes(clip).map((t) => (
+        <span key={t} className="clip-key" style={{ left: t * pps }} aria-hidden="true" />
+      ))}
       {transition && <span className="clip-transition" title={`Transition: ${transition}`} style={{ width: Math.max(10, clip.transitionDur * pps) }} />}
       <span className="trim l" onPointerDown={(e) => onPointerDown(e, clip, 'trim-start')} />
       <span className="trim r" onPointerDown={(e) => onPointerDown(e, clip, 'trim-end')} />

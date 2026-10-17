@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   addAssetToTimeline,
+  addMarkerAtPlayhead,
+  copySelectedStyle,
+  pasteSelectedStyle,
   deleteSelected,
   duplicateSelected,
   goHome,
@@ -43,6 +46,12 @@ export function Editor() {
       } else if (mod && key === 'd') {
         e.preventDefault();
         duplicateSelected();
+      } else if (mod && e.altKey && key === 'c') {
+        e.preventDefault();
+        copySelectedStyle();
+      } else if (mod && e.altKey && key === 'v') {
+        e.preventDefault();
+        pasteSelectedStyle();
       } else if (mod) {
         return;
       } else if (e.key === ' ') {
@@ -64,7 +73,10 @@ export function Editor() {
       } else if (e.key === 'End') {
         engine.seek(projectDuration(useEditor.getState().project));
       } else if (e.key === 'Escape') {
-        select(null);
+        if (useEditor.getState().pick) useEditor.setState({ pick: null });
+        else select(null);
+      } else if (key === 'm') {
+        addMarkerAtPlayhead();
       } else if (key === 'n') {
         useEditor.setState((s) => ({ snapping: !s.snapping }));
       } else if (e.key === '=' || e.key === '+') {

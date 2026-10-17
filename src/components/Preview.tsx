@@ -3,7 +3,7 @@ import { updateSelected } from '../actions';
 import { engine } from '../engine/engine';
 import { hitTest, type DrawBox } from '../engine/render';
 import { projectDuration } from '../model/ops';
-import { beginGesture, endGesture, select, useEditor } from '../store';
+import { beginGesture, endGesture, select, toast, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatTimecode } from '../utils';
 
@@ -22,6 +22,8 @@ export function Preview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const settings = useEditor((s) => s.project.settings);
   const selectedId = useEditor((s) => s.selectedId);
+  const pick = useEditor((s) => s.pick);
+  const task = useEditor((s) => s.task);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [box, setBox] = useState<DrawBox | null>(null);
   const [guides, setGuides] = useState({ v: false, h: false });
@@ -95,9 +97,42 @@ export function Preview() {
 
   const currentTransform = () => useEditor.getState().project.clips.find((c) => c.id === useEditor.getState().selectedId)?.transform;
 
+  /** Position of a project-space point within the selected clip's frame, as fractions (may fall outside 0..1). */
+  const pointInSelected = (pt: Pt) => {
+    if (!box) return null;
+    const a = (-box.rotation * Math.PI) / 180;
+    const dx = pt.x - box.cx;
+    const dy = pt.y - box.cy;
+    const lx = dx * Math.cos(a) - dy * Math.sin(a);
+    const ly = dx * Math.sin(a) + dy * Math.cos(a);
+    return { fx: lx / box.w + 0.5, fy: ly / box.h + 0.5 };
+  };
+
+  const handlePick = (mode: 'chroma' | 'spotlight', pt: Pt) => {
+    const st = useEditor.getState();
+    const clip = st.project.clips.find((c) => c.id === st.selectedId);
+    const f = pointInSelected(pt);
+    if (!clip || !f || f.fx < 0 || f.fx > 1 || f.fy < 0 || f.fy > 1) {
+      toast('Tap inside the selected clip');
+      return;
+    }
+    if (mode === 'chroma') {
+      const color = engine.sampleColor(clip, f.fx, f.fy);
+      if (color) updateSelected((c) => ({ chroma: { similarity: 0.4, smoothness: 0.15, ...c.chroma, color } }));
+    } else {
+      updateSelected((c) => (c.spotlight ? { spotlight: { ...c.spotlight, x: f.fx, y: f.fy } } : {}));
+    }
+    useEditor.setState({ pick: null });
+  };
+
   const onStageDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const pt = toProject(e);
+    const pick = useEditor.getState().pick;
+    if (pick) {
+      handlePick(pick, pt);
+      return;
+    }
     pointers.current.set(e.pointerId, pt);
     // A second finger on a selected clip turns the gesture into pinch-to-scale and twist-to-rotate.
     if (pointers.current.size === 2) {
@@ -201,7 +236,7 @@ export function Preview() {
     <section className="preview panel">
       <div className="preview-wrap" ref={wrapRef}>
         <div
-          className="stage"
+          className={`stage ${pick ? 'picking' : ''}`}
           ref={stageRef}
           style={{ width: size.w, height: size.h }}
           onPointerDown={onStageDown}
@@ -215,6 +250,29 @@ export function Preview() {
           }}
         >
           <canvas ref={canvasRef} data-preview style={{ width: size.w, height: size.h }} />
+          {pick && (
+            <div className="pick-banner" role="status">
+              <Icon name={pick === 'chroma' ? 'eyedropper' : 'target'} size={16} />
+              {pick === 'chroma' ? 'Tap the colour to remove' : 'Tap your player'}
+              <button onPointerDown={(e) => e.stopPropagation()} onClick={() => useEditor.setState({ pick: null })}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {task && (
+            <div className="task-pill" role="status" aria-live="polite">
+              <span className="spinner" aria-hidden="true" />
+              <span>
+                {task.label}
+                {task.progress !== null ? ` ${Math.round(task.progress * 100)}%` : '...'}
+              </span>
+              {task.cancel && (
+                <button onPointerDown={(e) => e.stopPropagation()} onClick={task.cancel}>
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
           {guides.v && <div className="guide v" />}
           {guides.h && <div className="guide h" />}
           {box && (

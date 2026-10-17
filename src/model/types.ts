@@ -105,6 +105,62 @@ export interface Caption {
   highlight: string | null;
 }
 
+/** A point on a speed curve: at fraction `p` (0..1) through the clip, play at `s` times the clip speed. */
+export interface SpeedPoint {
+  p: number;
+  s: number;
+}
+
+export interface SpeedCurve {
+  /** Preset the curve came from, for display. */
+  id: string;
+  points: SpeedPoint[];
+}
+
+export type KeyProp = 'x' | 'y' | 'scale' | 'rotation' | 'opacity' | 'volume';
+
+export interface Keyframe {
+  /** Seconds from the clip's start on the timeline. */
+  t: number;
+  v: number;
+}
+
+export interface Crop {
+  /** Fractions of the source trimmed from each edge. */
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface ChromaKey {
+  color: string;
+  /** 0..1, how far from the key colour still counts as background. */
+  similarity: number;
+  /** 0..1, width of the soft edge. */
+  smoothness: number;
+}
+
+/** Freeze-frame callout on the player at the start of a clip, as in recruiting reels. */
+export interface Spotlight {
+  /** Centre of the ring as fractions of the source frame. */
+  x: number;
+  y: number;
+  /** Ring radius as a fraction of the source frame height. */
+  r: number;
+  color: string;
+  label: string;
+  /** Zoom towards the player during the hold. */
+  zoom: boolean;
+}
+
+export interface Marker {
+  id: string;
+  t: number;
+  label: string;
+  color: string;
+}
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -135,6 +191,16 @@ export interface Clip {
   text?: TextStyle;
   caption?: Caption;
   sticker?: string;
+  /** Variable speed across the clip (CapCut "curve" speed). */
+  curve?: SpeedCurve;
+  /** Seconds the first frame is held before playback starts (used by Spotlight). */
+  hold?: number;
+  spotlight?: Spotlight;
+  keyframes?: Partial<Record<KeyProp, Keyframe[]>>;
+  crop?: Crop;
+  flipH?: boolean;
+  flipV?: boolean;
+  chroma?: ChromaKey;
 }
 
 export interface ProjectSettings {
@@ -152,4 +218,5 @@ export interface Project {
   settings: ProjectSettings;
   tracks: Track[];
   clips: Clip[];
+  markers?: Marker[];
 }

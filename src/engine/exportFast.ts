@@ -135,10 +135,19 @@ class FrameFeed {
 
 async function loadImages(project: Project, assets: Record<string, Asset>): Promise<Map<string, HTMLImageElement>> {
   const images = new Map<string, HTMLImageElement>();
+  // Image clips, plus everything graphics draw: logos, roster photos and their own photo.
+  const ids = new Set<string>();
   for (const clip of project.clips) {
-    if (clip.kind !== 'image' || !clip.assetId || images.has(clip.assetId)) continue;
-    const asset = assets[clip.assetId];
-    if (!asset) continue;
+    if (clip.kind === 'image' && clip.assetId) ids.add(clip.assetId);
+    const g = clip.graphic;
+    if (clip.kind === 'graphic' && g) {
+      if (clip.assetId && g.media !== 'video') ids.add(clip.assetId);
+      for (const id of [g.logo, g.oppLogo, ...(g.players ?? []).map((p) => p.photo)]) if (id) ids.add(id);
+    }
+  }
+  for (const id of ids) {
+    const asset = assets[id];
+    if (!asset || asset.kind !== 'image') continue;
     const img = new Image();
     img.src = asset.url;
     await img.decode();
@@ -215,14 +224,16 @@ export async function exportFast(
     const getSource = (clip: Clip): Source | null => {
       if (clip.kind === 'image') return (clip.assetId && images.get(clip.assetId)) || null;
       if (clip.kind === 'video') return feed!.frameFor(clip);
+      if (clip.kind === 'graphic' && clip.assetId) return clip.graphic?.media === 'video' ? feed!.frameFor(clip) : images.get(clip.assetId) ?? null;
       return null;
     };
+    const getImage = (id: string) => images.get(id) ?? null;
     let lastYield = performance.now();
     for (let i = 0; i < frames; i++) {
       checkAbort(opts.signal);
       const t = i / opts.fps;
       await feed.advance(project, t);
-      renderFrame(ctx, project, t, { getSource });
+      renderFrame(ctx, project, t, { getSource, getImage });
       await videoSource.add(t, 1 / opts.fps);
       if (performance.now() - lastYield > 32) {
         opts.onProgress((i + 1) / frames);

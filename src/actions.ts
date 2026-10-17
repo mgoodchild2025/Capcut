@@ -874,59 +874,55 @@ export interface WizardResult {
 export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
   const ok = await runTask('Building your reel', async (report) => {
     const { REEL_STYLES, buildReel } = await import('./templates/reel');
-    const { cardImage } = await import('./templates/cards');
     const style = REEL_STYLES.find((s) => s.id === w.style)!;
     const [W, H] = style.aspect;
-    const ids: Record<string, string> = {};
-    type Variant = import('./templates/cards').CardVariant;
-    const variants: Variant[] = ['intro'];
-    if (w.style === 'recruiting') variants.push('info');
-    if (w.style === 'team' && w.info.roster.length) variants.push('roster');
-    if (w.info.stats.some(([k, v]) => k && v)) variants.push('stats');
-    variants.push('outro');
-    const { playedSets } = await import('./templates/match');
-    const finalScore = w.style !== 'lineup' && playedSets(w.info).length > 0;
-    // Jersey-number cards: the spotlight player, and lineup starters without a photo or clip.
-    const numberCards: [string, string][] =
-      w.style === 'spotlight'
-        ? [['self', w.info.number]]
-        : w.style === 'lineup'
-          ? w.info.roster.filter((r) => r.starter && !(r.assetId && get().assets[r.assetId])).map((r) => [r.key, r.number])
-          : [];
-    let step = 0;
+    const assetOf = (id?: string) => (id ? get().assets[id] : undefined);
+
+    // Player photos and clips: the featured player, and the roster for team reels and the lineup.
+    const roster = style.roster ? w.info.roster.filter((r) => (style.roster === 'intros' ? r.starter : true) && assetOf(r.assetId)) : [];
+    const media: { key: string; assetId: string; cutout: boolean }[] = [
+      ...(style.subject === 'player' && assetOf(w.info.photo) ? [{ key: 'photo', assetId: w.info.photo!, cutout: !!w.info.photoCutout }] : []),
+      ...roster.map((r) => ({ key: r.key, assetId: r.assetId!, cutout: !!r.cutout })),
+    ];
+    const toCut = media.filter((m) => m.cutout && assetOf(m.assetId)?.kind === 'image');
+
     // Plays to auto-follow: wide footage going into a narrower frame, with no spotted player to centre on.
     const { needsReframe, trackAction } = await import('./ai/reframe');
-    const toTrack = w.follow ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => !c.spotlight && get().assets[c.assetId] && needsReframe(get().assets[c.assetId], W, H)) : [];
-    const steps = variants.length + numberCards.length + toTrack.length + (finalScore ? 1 : 0) + (w.musicId ? 1 : 0) + 3;
-    for (const v of variants) {
-      const blob = await cardImage(W, H, w.info.colors, v);
-      const a = await importBlob(blob, `${v} card.png`);
-      if (a) ids[v] = a.id;
-      report(++step / steps);
-    }
-    if (finalScore) {
-      const a = await importBlob(await cardImage(W, H, w.info.colors, 'stats'), 'final score card.png');
-      if (a) ids.final = a.id;
-      report(++step / steps);
-    }
-    let logo: Asset | null = null;
-    if (w.info.logo) {
-      logo = await importBlob(await (await fetch(w.info.logo)).blob(), 'Team logo.png');
-    }
+    const toTrack = w.follow ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => !c.spotlight && assetOf(c.assetId) && needsReframe(assetOf(c.assetId)!, W, H)) : [];
+    let step = 0;
+    const steps = 4 + toCut.length + toTrack.length + (w.musicId ? 1 : 0);
+
+    const fromDataUrl = async (url: string | undefined, name: string) => (url ? importBlob(await (await fetch(url)).blob(), name) : null);
+    const logo = await fromDataUrl(w.info.logo, 'Team logo.png');
+    const oppLogo = await fromDataUrl(w.info.oppLogo, 'Opponent logo.png');
     report(++step / steps);
-    const players: Record<string, string> = {};
-    const byNumber = new Map<string, string>();
-    for (const [key, number] of numberCards) {
-      // Players sharing a number (or with none) share a card.
-      let id = byNumber.get(number);
-      if (!id) {
-        const a = await importBlob(await cardImage(W, H, w.info.colors, 'player', { number }), `#${number || 'player'} card.png`);
-        id = a?.id;
-        if (id) byNumber.set(number, id);
+
+    // Cut players out of their photos (on-device model, downloaded once). If that isn't possible,
+    // the photos are used as they are.
+    const replaced = new Map<string, string>();
+    let cutFailed = false;
+    for (const m of toCut) {
+      if (cutFailed) break;
+      try {
+        const { removeBackground } = await import('./ai/cutout');
+        const src = assetOf(m.assetId)!;
+        const png = await removeBackground(await (await fetch(src.url)).blob());
+        const cut = await importBlob(png, `${baseName(src.name)} cutout.png`);
+        if (cut) replaced.set(m.assetId, cut.id);
+      } catch (e) {
+        console.warn('Background removal failed', e);
+        cutFailed = true;
+        toast("Couldn't remove photo backgrounds right now (it needs a one-time download). Using the photos as they are.");
       }
-      if (id) players[key] = id;
       report(++step / steps);
     }
+    const finalId = (id: string) => replaced.get(id) ?? id;
+    const cutouts: string[] = [...replaced.values()];
+    for (const m of media) {
+      const a = assetOf(finalId(m.assetId));
+      if (a?.kind === 'image' && !replaced.has(m.assetId) && (await hasTransparency(a.url))) cutouts.push(a.id);
+    }
+
     let music: Asset | null = null;
     if (w.musicId) {
       const { MUSIC } = await import('./audio/synth');
@@ -940,7 +936,7 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
       report(++step / steps);
     }
     const sfx = async (id: string, name: string) => importBlob((await renderSound('sfx', id)).blob, name);
-    const whoosh = w.style === 'hype' || w.style === 'team' || w.style === 'lineup' ? await sfx('whoosh', 'Whoosh.wav') : null;
+    const whoosh = await sfx('whoosh', 'Whoosh.wav');
     report(++step / steps);
     const impact = await sfx('impact', 'Impact.wav');
     report(++step / steps);
@@ -948,30 +944,28 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     const clips = w.clips.slice();
     for (const [c, i] of toTrack) {
       try {
-        clips[i] = { ...c, track: await trackAction(get().assets[c.assetId], c.inPoint, c.inPoint + c.duration) };
+        clips[i] = { ...c, track: await trackAction(assetOf(c.assetId)!, c.inPoint, c.inPoint + c.duration) };
       } catch (e) {
         console.warn('Could not track', e);
       }
       report(++step / steps);
     }
 
+    const photo = media.find((m) => m.key === 'photo');
     const built = buildReel(
       {
         style: w.style,
         info: w.info,
         clips,
         cards: {
-          intro: ids.intro,
-          info: ids.info,
-          stats: ids.stats,
-          outro: ids.outro,
           music: music?.id,
           whoosh: whoosh?.id,
           impact: impact?.id,
-          roster: ids.roster,
-          players,
-          final: ids.final,
           logo: logo?.id,
+          oppLogo: oppLogo?.id,
+          photo: photo ? finalId(photo.assetId) : undefined,
+          players: Object.fromEntries(media.filter((m) => m.key !== 'photo').map((m) => [m.key, finalId(m.assetId)])),
+          cutouts,
         },
       },
       get().assets,
@@ -979,13 +973,33 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     const current = get().project;
     commit({ ...built, id: current.id, createdAt: current.createdAt });
     engine.pause();
-    // Land on the finished title card rather than its first, still-animating frame.
-    engine.seek(1.2);
+    // Land on the finished title rather than its first, still-animating frame.
+    engine.seek(2.2);
     select(null);
     return true;
   });
   if (ok) toast('Your reel is ready. Press play!');
   return !!ok;
+}
+
+/** True when an image has see-through areas (a cut-out player rather than a photo). */
+async function hasTransparency(url: string): Promise<boolean> {
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = 48;
+    c.height = 48;
+    const ctx = c.getContext('2d', { willReadFrequently: true })!;
+    ctx.drawImage(img, 0, 0, 48, 48);
+    const d = ctx.getImageData(0, 0, 48, 48).data;
+    let clear = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 200) clear++;
+    return clear > 48 * 48 * 0.08;
+  } catch {
+    return false;
+  }
 }
 
 /** AI voiceover: speaks the text on-device and drops it at the playhead. */

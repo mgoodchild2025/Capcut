@@ -9,7 +9,9 @@ export function fastExportAvailable(): boolean {
 
 /** Layers whose pixels come from a decoded video, in the same order the compositor asks for them. */
 export function videoLayers(project: Project, t: number): Layer[] {
-  return activeLayers(project, t).filter((l) => l.clip.kind === 'video' && !l.track.hidden && l.track.kind !== 'audio');
+  return activeLayers(project, t).filter(
+    (l) => (l.clip.kind === 'video' || (l.clip.kind === 'graphic' && l.clip.graphic?.media === 'video' && !!l.clip.assetId)) && !l.track.hidden && l.track.kind !== 'audio',
+  );
 }
 
 export function frameCount(project: Project, fps: number): number {

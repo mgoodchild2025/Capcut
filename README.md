@@ -6,7 +6,18 @@ A CapCut-style video editor that runs entirely in the browser, with a built-in w
 
 ## Volleyball highlight reels
 
-1. On the home screen, pick **Recruiting reel**, **Hype reel** or **Season recap**. You can also open the **Volleyball** tab in the editor.
+1. On the home screen, pick a template. You can also open the **Volleyball** tab in the editor.
+
+   | Template | Format | For |
+   | --- | --- | --- |
+   | Recruiting reel | 16:9 | College coaches: profile card, spotlights, stats, contact details |
+   | Hype reel | 9:16 | TikTok and Reels: beat-synced cuts, slow motion, flashes |
+   | Player spotlight | 4:5 | Feed posts like Player of the Game or Senior Night: jersey-number art, every play rings the player |
+   | Team reel | 9:16 | The team account: roster card, each play credited to a player, team stats |
+   | Starting lineup | 9:16 | Pre-game hype: each starter's number, name and position over their photo, clip or a number card |
+   | Season recap | 16:9 | Team montage with record, stats and a send-off |
+
+   Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one. The roster is remembered for next time.
 2. Enter the player or team details and pick team colours. The title card previews live, and details are remembered for next time.
 3. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. It then ranks the best rallies, each framed from serve to end whistle. Pick plays from the AI results or use whole clips, then add skill labels (Kill, Ace, Block...) and reorder them.
 4. Tap your player in each play to place a **spotlight**. The reel freezes that frame, dims the surroundings and rings the player.
@@ -47,7 +58,8 @@ The Volleyball tab also has text presets (KILL!, ACE!, BLOCK!, DIG!, name and sc
   - Five built-in royalty-free music tracks and twelve sound effects, synthesised in the browser.
   - Voiceover recording and AI text-to-speech.
   - Beat detection with bar markers, and **Sync cuts to the beat**.
-- **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing.
+- **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing. On phones, **Save to Photos** / **Share** hands the video to the share sheet.
+- **Install as an app**: Add to Home Screen (on iPhone: Share, then Add to Home Screen) for a full-screen app that also works offline.
 
 ## AI that runs on your device
 

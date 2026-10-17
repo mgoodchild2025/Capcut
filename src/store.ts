@@ -30,7 +30,7 @@ export interface EditorState {
   /** Voiceover recording in progress, started at this timeline time. */
   recording: { start: number } | null;
   /** Highlight reel wizard; `style` preselects a template. */
-  wizard: { style?: 'recruiting' | 'hype' | 'recap' } | null;
+  wizard: { style?: import('./templates/reel').ReelStyle } | null;
 }
 
 export const useEditor = create<EditorState>(() => ({

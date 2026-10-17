@@ -1,6 +1,6 @@
 /** Background artwork for reel title, info, stats and outro cards, painted in the team's colours. */
 
-export type CardVariant = 'intro' | 'info' | 'stats' | 'outro';
+export type CardVariant = 'intro' | 'info' | 'stats' | 'outro' | 'roster' | 'player';
 
 function hexToRgb(hex: string): [number, number, number] {
   const m = hex.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
@@ -45,7 +45,28 @@ function volleyball(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: nu
   ctx.restore();
 }
 
-export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, colors: [string, string], variant: CardVariant) {
+/** Huge outlined jersey number, the backdrop of a player card. */
+function jerseyNumber(ctx: CanvasRenderingContext2D, W: number, H: number, n: string, c2: string) {
+  const S = Math.min(W, H);
+  const portrait = H > W;
+  const size = Math.min(S * (n.length > 1 ? 0.95 : 1.15), (W * 0.9) / Math.max(1, n.length * 0.55));
+  ctx.save();
+  ctx.font = `900 ${size}px "Big Shoulders Display", Impact, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const x = portrait ? W / 2 : W * 0.68;
+  const y = portrait ? H * 0.36 : H * 0.5;
+  ctx.fillStyle = rgba(c2, 0.16);
+  ctx.fillText(n, x, y);
+  ctx.lineWidth = S * 0.008;
+  ctx.strokeStyle = rgba(c2, 0.75);
+  ctx.shadowColor = rgba(c2, 0.6);
+  ctx.shadowBlur = S * 0.04;
+  ctx.strokeText(n, x, y);
+  ctx.restore();
+}
+
+export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, colors: [string, string], variant: CardVariant, opts: { number?: string } = {}) {
   const [c1, c2] = colors;
   const S = Math.min(W, H);
   // Base: deep diagonal gradient between darkened team colours.
@@ -57,7 +78,7 @@ export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, c
   ctx.fillRect(0, 0, W, H);
 
   // Glow behind the subject side.
-  const glowX = variant === 'stats' ? W * 0.2 : variant === 'outro' ? W * 0.5 : W * 0.78;
+  const glowX = variant === 'stats' ? W * 0.2 : variant === 'outro' || variant === 'roster' || (variant === 'player' && H > W) ? W * 0.5 : W * 0.78;
   const glow = ctx.createRadialGradient(glowX, H * 0.45, 0, glowX, H * 0.45, S * 0.9);
   glow.addColorStop(0, rgba(c2, 0.45));
   glow.addColorStop(1, rgba(c2, 0));
@@ -74,13 +95,16 @@ export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, c
   }
   ctx.restore();
 
-  if (variant === 'info') {
+  if (variant === 'player') {
+    jerseyNumber(ctx, W, H, (opts.number ?? '').replace('#', '') || '?', c2);
+  } else if (variant === 'info' || variant === 'roster') {
     // Court lines, seen from above.
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
     ctx.lineWidth = S * 0.006;
-    const cw = W * 0.5;
+    // The roster card centres a bigger court behind the names.
+    const cw = variant === 'roster' ? Math.min(W, H) * 0.9 : W * 0.5;
     const ch = cw / 2;
-    const x = W * 0.46;
+    const x = variant === 'roster' ? (W - cw) / 2 : W * 0.46;
     const y = (H - ch) / 2;
     ctx.strokeRect(x, y, cw, ch);
     ctx.beginPath();
@@ -99,7 +123,7 @@ export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, c
 
   // Accent bar.
   ctx.fillStyle = c2;
-  if (variant !== 'outro') ctx.fillRect(W * 0.06, H * 0.2, S * 0.012, H * 0.6);
+  if (variant !== 'outro' && variant !== 'roster' && variant !== 'player') ctx.fillRect(W * 0.06, H * 0.2, S * 0.012, H * 0.6);
 
   // Film grain and vignette so flat colours don't band after compression.
   const grain = ctx.createImageData(256, 256);
@@ -122,11 +146,12 @@ export function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, c
   ctx.fillRect(0, 0, W, H);
 }
 
-export async function cardImage(W: number, H: number, colors: [string, string], variant: CardVariant): Promise<Blob> {
+export async function cardImage(W: number, H: number, colors: [string, string], variant: CardVariant, opts: { number?: string } = {}): Promise<Blob> {
+  await document.fonts?.load?.('900 100px "Big Shoulders Display"').catch(() => {});
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
-  paintCard(canvas.getContext('2d')!, W, H, colors, variant);
+  paintCard(canvas.getContext('2d')!, W, H, colors, variant, opts);
   return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('Card render failed'))), 'image/png'));
 }
 

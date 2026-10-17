@@ -127,9 +127,10 @@ let toastSeq = 0;
 export function toast(text: string): void {
   const id = ++toastSeq;
   set({ toast: { id, text } });
+  // Longer messages stay up long enough to read.
   setTimeout(() => {
     if (get().toast?.id === id) set({ toast: null });
-  }, 2600);
+  }, Math.min(9000, Math.max(2600, text.length * 60)));
 }
 
 export function openProject(project: Project, assets: Record<string, Asset>): void {

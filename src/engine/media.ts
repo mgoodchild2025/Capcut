@@ -1,3 +1,4 @@
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from 'mediabunny';
 import type { Asset, AssetKind } from '../model/types';
 import { uid } from '../utils';
 
@@ -43,41 +44,139 @@ function drawThumb(src: CanvasImageSource, w: number, h: number, height: number,
   return c.toDataURL('image/jpeg', quality);
 }
 
-async function loadVideo(url: string): Promise<HTMLVideoElement> {
+/**
+ * Opens a video far enough to know its size and length. Waits for metadata only: iOS Safari doesn't
+ * load frames until playback starts, so waiting for `loadeddata` there would never finish.
+ * Resolves to null when this browser can't play the file (an unsupported codec such as HEVC).
+ */
+async function openVideo(url: string, timeoutMs = 15000): Promise<HTMLVideoElement | null> {
   const v = document.createElement('video');
   v.preload = 'auto';
   v.muted = true;
   v.playsInline = true;
   v.src = url;
-  await once(v, 'loadeddata');
+  try {
+    await once(v, 'loadedmetadata', 'error', timeoutMs);
+  } catch {
+    release(v);
+    return null;
+  }
+  // Some browsers play the sound of a video whose picture they can't decode and report 0x0.
+  if (!v.videoWidth || !v.videoHeight || v.error) {
+    release(v);
+    return null;
+  }
   return v;
 }
 
+function release(v: HTMLVideoElement) {
+  v.removeAttribute('src');
+  v.load();
+}
+
+/** Get a frame onto the element. Mobile browsers show nothing until the video has played once. */
+async function primeFrames(v: HTMLVideoElement) {
+  if (v.readyState >= 2) return;
+  const ready = once(v, 'loadeddata', 'error', 4000).catch(() => null);
+  await v.play().catch(() => null);
+  v.pause();
+  await ready;
+}
+
 async function seekTo(v: HTMLVideoElement, t: number) {
-  if (Math.abs(v.currentTime - t) < 0.001) return;
+  if (Math.abs(v.currentTime - t) < 0.001 && v.readyState >= 2) return;
   const p = once(v, 'seeked', 'error', 5000);
   v.currentTime = t;
   await p;
 }
 
+async function readDuration(v: HTMLVideoElement): Promise<number> {
+  if (isFinite(v.duration)) return v.duration;
+  // Some WebM files report Infinity until you seek far past the end.
+  v.currentTime = 1e7;
+  await once(v, 'durationchange', 'error', 5000).catch(() => null);
+  return isFinite(v.duration) ? v.duration : 0;
+}
+
+type Decodable = { input: Input; sink: CanvasSink; first: number };
+
+/** A frame reader that decodes with WebCodecs, or null when the browser can't decode this file that way. */
+async function openDecoder(blob: Blob, height: number): Promise<Decodable | null> {
+  if (typeof VideoDecoder === 'undefined') return null;
+  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error('not decodable');
+    const w = await track.getDisplayWidth();
+    const h = await track.getDisplayHeight();
+    const sink = new CanvasSink(track, { height, width: Math.max(1, Math.round((w / h) * height)), fit: 'fill' });
+    return { input, sink, first: await track.getFirstTimestamp() };
+  } catch {
+    input.dispose();
+    return null;
+  }
+}
+
+const canvasToJpeg = (c: HTMLCanvasElement | OffscreenCanvas, quality: number) => {
+  if (c instanceof HTMLCanvasElement) return c.toDataURL('image/jpeg', quality);
+  const out = document.createElement('canvas');
+  out.width = c.width;
+  out.height = c.height;
+  out.getContext('2d')!.drawImage(c, 0, 0);
+  return out.toDataURL('image/jpeg', quality);
+};
+
+async function decodedThumb(blob: Blob, t: number, height: number): Promise<string | undefined> {
+  const d = await openDecoder(blob, height);
+  if (!d) return undefined;
+  try {
+    const frame = (await d.sink.getCanvas(d.first + t)) ?? (await d.sink.getCanvas(d.first));
+    return frame ? canvasToJpeg(frame.canvas, 0.72) : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    d.input.dispose();
+  }
+}
+
+/** Thrown when the browser can't play a video and no converter was offered. */
+export class UnplayableVideoError extends Error {
+  constructor(name: string) {
+    super(`${name} uses a format this browser can't play.`);
+    this.name = 'UnplayableVideoError';
+  }
+}
+
+export type ImportOptions = {
+  /** Called when the browser can't play a video; returns a playable copy. */
+  convert?: (file: Blob, name: string) => Promise<Blob>;
+};
+
+export type Imported = { asset: Asset; blob: Blob };
+
 /** Read basic metadata and a poster frame. Slower extras (filmstrip, waveform) come from `enrichAsset`. */
-export async function importFile(file: Blob & { name?: string }, id = uid('a_')): Promise<Asset> {
+export async function importFile(file: Blob & { name?: string }, id = uid('a_'), opts: ImportOptions = {}): Promise<Imported> {
   const name = file.name ?? 'media';
   const kind = kindOf(file as File);
   if (!kind) throw new Error(`Unsupported file type: ${name}`);
-  const url = URL.createObjectURL(file);
-  const base = { id, name, kind, url, size: file.size, hasAudio: kind !== 'image' };
+  let blob: Blob = file;
+  let url = URL.createObjectURL(file);
+  const base = { id, name, kind, size: file.size, hasAudio: kind !== 'image' };
 
   if (kind === 'image') {
     const img = new Image();
     img.src = url;
     await img.decode();
     return {
-      ...base,
-      duration: Infinity,
-      width: img.naturalWidth,
-      height: img.naturalHeight,
-      thumbnail: drawThumb(img, img.naturalWidth, img.naturalHeight, 160),
+      blob,
+      asset: {
+        ...base,
+        url,
+        duration: Infinity,
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+        thumbnail: drawThumb(img, img.naturalWidth, img.naturalHeight, 160),
+      },
     };
   }
 
@@ -86,44 +185,77 @@ export async function importFile(file: Blob & { name?: string }, id = uid('a_'))
     a.preload = 'metadata';
     a.src = url;
     await once(a, 'loadedmetadata');
-    return { ...base, duration: a.duration, width: 0, height: 0 };
+    return { blob, asset: { ...base, url, duration: a.duration, width: 0, height: 0 } };
   }
 
-  const v = await loadVideo(url);
-  let duration = v.duration;
-  if (!isFinite(duration)) {
-    // Some WebM files report Infinity until you seek far past the end.
-    v.currentTime = 1e7;
-    await once(v, 'durationchange', 'error', 5000).catch(() => null);
-    duration = isFinite(v.duration) ? v.duration : 0;
+  let v = await openVideo(url);
+  if (!v) {
+    URL.revokeObjectURL(url);
+    if (!opts.convert) throw new UnplayableVideoError(name);
+    blob = await opts.convert(file, name);
+    url = URL.createObjectURL(blob);
+    v = await openVideo(url);
+    if (!v) {
+      URL.revokeObjectURL(url);
+      throw new UnplayableVideoError(name);
+    }
   }
-  await seekTo(v, Math.min(duration * 0.1, 1));
-  const asset: Asset = {
-    ...base,
-    duration,
-    width: v.videoWidth,
-    height: v.videoHeight,
-    thumbnail: drawThumb(v, v.videoWidth, v.videoHeight, 160),
-  };
-  v.removeAttribute('src');
-  v.load();
-  return asset;
+  try {
+    const duration = await readDuration(v);
+    const width = v.videoWidth;
+    const height = v.videoHeight;
+    const at = Math.min(duration * 0.1, 1);
+    let thumbnail = await decodedThumb(blob, at, 160);
+    if (!thumbnail) {
+      try {
+        await primeFrames(v);
+        await seekTo(v, at);
+        thumbnail = drawThumb(v, width, height, 160);
+      } catch {
+        // A missing poster frame is cosmetic; the clip itself is fine.
+      }
+    }
+    return { blob, asset: { ...base, url, size: blob.size, duration, width, height, thumbnail } };
+  } finally {
+    release(v);
+  }
 }
 
 export async function buildFilmstrip(asset: Asset): Promise<string[]> {
   if (asset.kind === 'image') return asset.thumbnail ? [asset.thumbnail] : [];
   if (asset.kind !== 'video') return [];
-  const v = await loadVideo(asset.url);
   const count = Math.max(1, Math.min(MAX_FILMSTRIP_FRAMES, Math.ceil(asset.duration)));
-  const frames: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const t = Math.min(asset.duration - 0.05, ((i + 0.5) / count) * asset.duration);
-    await seekTo(v, Math.max(0, t));
-    frames.push(drawThumb(v, v.videoWidth, v.videoHeight, FILMSTRIP_HEIGHT, 0.6));
+  const times = Array.from({ length: count }, (_, i) => Math.max(0, Math.min(asset.duration - 0.05, ((i + 0.5) / count) * asset.duration)));
+
+  const blob = await (await fetch(asset.url)).blob();
+  const d = await openDecoder(blob, FILMSTRIP_HEIGHT);
+  if (d) {
+    try {
+      const frames: string[] = [];
+      for await (const frame of d.sink.canvasesAtTimestamps(times.map((t) => d.first + t))) {
+        if (frame) frames.push(canvasToJpeg(frame.canvas, 0.6));
+      }
+      if (frames.length) return frames;
+    } catch (e) {
+      console.warn('Decoder filmstrip failed, using the video element', e);
+    } finally {
+      d.input.dispose();
+    }
   }
-  v.removeAttribute('src');
-  v.load();
-  return frames;
+
+  const v = await openVideo(asset.url);
+  if (!v) return [];
+  try {
+    await primeFrames(v);
+    const frames: string[] = [];
+    for (const t of times) {
+      await seekTo(v, t);
+      frames.push(drawThumb(v, v.videoWidth, v.videoHeight, FILMSTRIP_HEIGHT, 0.6));
+    }
+    return frames;
+  } finally {
+    release(v);
+  }
 }
 
 /** Decode the audio track and reduce it to peaks. Returns null when there is no audio. */

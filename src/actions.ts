@@ -1,5 +1,6 @@
 import { engine } from './engine/engine';
-import { buildFilmstrip, buildWaveform, importFile } from './engine/media';
+import { convertForPlayback } from './engine/convert';
+import { buildFilmstrip, buildWaveform, importFile, UnplayableVideoError } from './engine/media';
 import { deleteAssetRecord, loadDraft, saveAssetBlob, saveProject } from './engine/persist';
 import { createMediaClip, createProject, createStickerClip, createTextClip } from './model/factory';
 import {
@@ -39,20 +40,44 @@ export async function importFiles(files: Iterable<File>): Promise<Asset[]> {
   for (const file of list) {
     useEditor.setState((s) => ({ importing: s.importing + 1 }));
     try {
-      const asset = await importFile(file);
+      const { asset, blob } = await importFile(file, undefined, { convert: convertWithProgress });
       addAsset(asset);
       imported.push(asset);
       const projectId = get().project.id;
-      void saveAssetBlob(projectId, asset, file).catch((e) => console.warn('Could not store media', e));
-      void enrich(asset, file);
+      void saveAssetBlob(projectId, asset, blob).catch((e) => console.warn('Could not store media', e));
+      void enrich(asset, blob);
     } catch (err) {
       console.error(err);
-      toast(`Couldn't import ${file.name}`);
+      const e = err as Error;
+      if (e.name === 'AbortError') toast(`Import of ${file.name} canceled`);
+      else if (e.name === 'UnplayableVideoError')
+        toast(`Couldn't import ${file.name}: this browser can't decode its video. Try Safari or Chrome, or set iPhone Camera > Formats to Most Compatible.`);
+      else toast(`Couldn't import ${file.name}`);
     } finally {
       useEditor.setState((s) => ({ importing: s.importing - 1 }));
     }
   }
   return imported;
+}
+
+/** Converts a video the browser can't play, showing progress (and a cancel button) in the preview. */
+async function convertWithProgress(file: Blob, name: string): Promise<Blob> {
+  const ac = new AbortController();
+  const ownsTask = !get().task;
+  const show = (progress: number | null, stage: string) => {
+    if (!ownsTask) return;
+    useEditor.setState({ task: { label: `${stage} ${name} for editing`, progress, cancel: () => ac.abort() } });
+  };
+  show(null, 'Preparing');
+  try {
+    return await convertForPlayback(file, name, show, ac.signal);
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e;
+    console.warn('Conversion failed', e);
+    throw new UnplayableVideoError(name);
+  } finally {
+    if (ownsTask) useEditor.setState({ task: null });
+  }
 }
 
 async function enrich(asset: Asset, blob: Blob) {

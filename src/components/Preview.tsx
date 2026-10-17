@@ -309,6 +309,8 @@ function Transport() {
   const project = useEditor((s) => s.project);
   const dur = projectDuration(project);
   const fps = project.settings.fps;
+  const atEnd = !playing && dur > 0 && t >= dur - 0.01;
+  const label = playing ? 'Pause' : atEnd ? 'Replay' : 'Play';
   return (
     <div className="transport">
       <span className="tc">
@@ -319,8 +321,8 @@ function Transport() {
         <button className="icon-btn" title="Previous frame (Left)" onClick={() => engine.stepFrames(-1)}>
           <Icon name="stepBack" size={16} />
         </button>
-        <button className="play-btn" title="Play/Pause (Space)" onClick={() => engine.toggle()} disabled={dur === 0}>
-          <Icon name={playing ? 'pause' : 'play'} size={22} />
+        <button className="play-btn" title={`${label} (Space)`} aria-label={label} onClick={() => engine.toggle()} disabled={dur === 0}>
+          <Icon name={playing ? 'pause' : atEnd ? 'replay' : 'play'} size={22} />
         </button>
         <button className="icon-btn" title="Next frame (Right)" onClick={() => engine.stepFrames(1)}>
           <Icon name="stepFwd" size={16} />

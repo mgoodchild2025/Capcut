@@ -324,13 +324,17 @@ class Engine {
       }
     }
     const playing = useEditor.getState().playing;
-    this.sync(t, playing);
+    const project = useEditor.getState().project;
+    // Clips end exactly at the timeline's end, so the very end would show an empty canvas.
+    // Hold the last frame there instead, as players do.
+    const end = projectDuration(project);
+    const shown = !this.exportCtx && end > 0 && t >= end ? Math.max(0, end - 0.5 / project.settings.fps) : t;
+    this.sync(shown, playing);
     if (!playing && !this.exportCtx && this.dirtyFrames <= 0) return;
     this.dirtyFrames--;
-    const project = useEditor.getState().project;
     if (this.preview) {
       const ctx = this.preview.getContext('2d');
-      if (ctx) this.boxes = renderFrame(ctx, project, t, { getSource: this.getSource });
+      if (ctx) this.boxes = renderFrame(ctx, project, shown, { getSource: this.getSource });
     }
     if (this.exportCtx) renderFrame(this.exportCtx, project, t, { getSource: this.getSource });
     for (const fn of this.listeners) fn(this.boxes);

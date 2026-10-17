@@ -289,7 +289,12 @@ export function Preview() {
               {(['nw', 'ne', 'sw', 'se'] as const).map((c) => (
                 <span key={c} className={`handle ${c}`} onPointerDown={onHandleDown('scale')} />
               ))}
-              <span className="handle rot" title="Rotate" onPointerDown={onHandleDown('rotate')}>
+              <span
+                // Below the frame the handle would sit over the play controls, so tuck it inside when there's no room.
+                className={`handle rot ${(box.cy + box.h / 2) * k + 48 > size.h ? 'inside' : ''}`}
+                title="Rotate"
+                onPointerDown={onHandleDown('rotate')}
+              >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4">
                   <path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v4h-4" />
                 </svg>

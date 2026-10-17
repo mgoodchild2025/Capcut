@@ -170,8 +170,28 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+/** Where a directly displayed video sits, in project pixels. See `RenderOptions.direct`. */
+export interface DirectPlacement {
+  clip: Clip;
+  cx: number;
+  cy: number;
+  /** Size of the visible (cropped) frame. */
+  w: number;
+  h: number;
+  rotation: number;
+  alpha: number;
+  /** Blur from animations, added to the clip's own filter. */
+  extraBlur: number;
+}
+
 export interface RenderOptions {
   getSource: (clip: Clip) => Source | null;
+  /**
+   * The bottom video, shown by the page itself (a `<video>` under a transparent canvas) instead of
+   * being copied onto the canvas, which is slow on phones. Its placement is reported, not drawn,
+   * and the background is left transparent.
+   */
+  direct?: { clipId: string; place: (p: DirectPlacement) => void };
 }
 
 /**
@@ -187,8 +207,12 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
   ctx.setTransform(pxScale, 0, 0, ch / H, 0, 0);
   ctx.globalAlpha = 1;
   ctx.filter = 'none';
-  ctx.fillStyle = background;
-  ctx.fillRect(0, 0, W, H);
+  if (opts.direct) {
+    ctx.clearRect(0, 0, W, H);
+  } else {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   const boxes: DrawBox[] = [];
   for (const layer of activeLayers(project, t)) {
@@ -245,6 +269,12 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         w = iw * fit * scale;
         h = ih * fit * scale;
         const spot = clip.spotlight && clip.hold ? spotlightState(clip, layer.local) : null;
+        if (opts.direct?.clipId === clip.id) {
+          opts.direct.place({ clip, cx, cy, w, h, rotation, alpha, extraBlur: m.blur });
+          ctx.restore();
+          boxes.push({ clipId: clip.id, cx, cy, w, h, rotation });
+          continue;
+        }
         ctx.save();
         ctx.beginPath();
         ctx.rect(-w / 2, -h / 2, w, h);

@@ -942,6 +942,27 @@ button:disabled {
 
 .stage canvas {
   display: block;
+  /* Above the directly shown video, which sits underneath in .direct-host. */
+  position: relative;
+}
+
+.direct-host {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.direct-clip {
+  position: absolute;
+  overflow: hidden;
+}
+
+.direct-clip video {
+  position: absolute;
+  display: block;
+  max-width: none;
+  object-fit: fill;
 }
 
 .sel-box {
@@ -977,6 +998,10 @@ button:disabled {
   place-items: center;
   color: #111;
   cursor: grab;
+}
+
+.handle.rot.inside {
+  bottom: 10px;
 }
 
 .guide {
@@ -3818,6 +3843,10 @@ input[type='range']::-moz-range-thumb {
     height: 30px;
     margin-left: -15px;
     bottom: -42px;
+  }
+
+  .handle.rot.inside {
+    bottom: 14px;
   }
 
   /* Swipes over unselected clips scroll the timeline; a selected clip takes the drag. */

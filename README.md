@@ -12,7 +12,7 @@ A CapCut-style video editor that runs entirely in the browser. Media never leave
 - **Look**: 14 filter presets, plus brightness, contrast, saturation, hue, blur and vignette.
 - **Motion**: in and out animations (fade, slide, zoom, spin, pop) and transitions between clips (dissolve, dip to black, push, wipe, zoom, blur).
 - **Audio**: per-clip volume up to 200%, fade in and out, track mute, and speed changes from 0.25x to 10x.
-- **Export**: 480p to 4K at 24 to 60 fps with three quality levels. Produces MP4 where the browser supports it, otherwise WebM, with mixed audio.
+- **Export**: 480p to 4K at 24 to 60 fps with three quality levels, as MP4 with mixed audio. Where the browser supports WebCodecs (Chrome, Edge, recent Firefox and Safari), export decodes, composites and encodes frame by frame: frame-accurate, usually faster than real time, and it keeps going in a background tab. Otherwise it falls back to recording playback in real time.
 - **Undo and redo** for every edit. Each drag or slider gesture counts as one step.
 
 ## Keyboard shortcuts
@@ -60,4 +60,4 @@ src/
 
 The timeline is a flat list of clips, each pointing at a track. `activeLayers(project, t)` resolves what is visible and audible at any moment, including the held outgoing frame during a transition. Both the preview and the export render from that one function, so what you see is what you export.
 
-Export records the composited canvas and the Web Audio mix in real time with `MediaRecorder`. It therefore takes as long as the video runs, and the tab needs to stay visible while it works.
+Export (`engine/exportFast.ts`) decodes each video clip with WebCodecs via [Mediabunny](https://mediabunny.dev), feeds the decoded frames to the same compositor, and encodes the result to MP4. The audio mix is rendered separately on an `OfflineAudioContext`. If a browser lacks WebCodecs, or a clip can't be decoded that way, the dialog falls back to recording the composited canvas and the Web Audio mix in real time with `MediaRecorder`. Speed changes shift pitch in both preview and export.

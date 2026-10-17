@@ -154,6 +154,8 @@ class Engine {
     el.preload = 'auto';
     el.muted = true;
     el.playsInline = true;
+    // Export resamples audio for speed changes (pitch follows speed); keep the preview identical.
+    el.preservesPitch = false;
     el.src = asset.url;
     el.addEventListener('seeked', this.invalidate);
     el.addEventListener('loadeddata', this.invalidate);

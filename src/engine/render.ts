@@ -3,7 +3,8 @@ import { FILTERS } from '../model/presets';
 import type { AnimKind, Clip, Project, TransitionKind } from '../model/types';
 import { easeInOutCubic, easeOutBack, easeOutCubic } from '../utils';
 
-export type Source = HTMLVideoElement | HTMLImageElement;
+/** Anything the compositor can draw a media frame from: live elements in preview, decoded canvases in export. */
+export type Source = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas;
 
 /** A drawn clip's on-canvas box in project coordinates, used for hit-testing and handles. */
 export interface DrawBox {
@@ -141,7 +142,8 @@ export function cssFilterFor(clip: Clip, extraBlur = 0, pxScale = 1): string {
 
 function sourceSize(el: Source): [number, number] {
   if (el instanceof HTMLVideoElement) return [el.videoWidth, el.videoHeight];
-  return [el.naturalWidth, el.naturalHeight];
+  if (el instanceof HTMLImageElement) return [el.naturalWidth, el.naturalHeight];
+  return [el.width, el.height];
 }
 
 export function textFont(clip: Clip, H: number): { font: string; size: number } {

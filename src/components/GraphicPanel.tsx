@@ -1,6 +1,7 @@
 import { updateSelected } from '../actions';
 import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
-import { edit } from '../store';
+import { edit, useEditor } from '../store';
+import { Icon } from '../ui/Icon';
 import { ColorField, gestureProps, Section, Toggle } from '../ui/controls';
 
 /** Labels for the text fields graphics use, in the order they're shown. */
@@ -25,12 +26,35 @@ const FIELDS: [string, string][] = [
 ];
 const MULTILINE = new Set(['title', 'sub']);
 
+/** The analyst's pen: draw, undo and clear the marks. */
+function TelestratorPanel({ clip }: { clip: Clip }) {
+  const draw = useEditor((s) => s.draw);
+  const marks = clip.graphic!.marks ?? [];
+  const color = clip.graphic!.colors[1];
+  return (
+    <Section title="Telestrator">
+      <p className="muted small">
+        {marks.length ? `${marks.length} mark${marks.length === 1 ? '' : 's'}. ` : ''}Marks draw themselves in one after another when the clip plays.
+      </p>
+      <button className={`btn block ${draw ? '' : 'primary'}`} onClick={() => useEditor.setState({ draw: draw ? null : { tool: 'circle', color } })}>
+        <Icon name="edit" /> {draw ? 'Stop drawing' : 'Draw on the preview'}
+      </button>
+      {marks.length > 0 && (
+        <button className="btn block" onClick={() => updateSelected((c) => ({ graphic: { ...c.graphic!, marks: [] } }))}>
+          <Icon name="trash" /> Clear all marks
+        </button>
+      )}
+    </Section>
+  );
+}
+
 /** Edit a broadcast graphic: its words, team colours and stat rows. */
 export function GraphicPanel({ clip }: { clip: Clip }) {
   const g = clip.graphic!;
   const set = (patch: Partial<GraphicSpec>) => updateSelected((c) => ({ graphic: { ...c.graphic!, ...patch } }));
   const setText = (key: string, value: string) => updateSelected((c) => ({ graphic: { ...c.graphic!, text: { ...c.graphic!.text, [key]: value } } }));
   const fields = FIELDS.filter(([k]) => k in g.text);
+  if (g.type === 'telestrator') return <TelestratorPanel clip={clip} />;
   return (
     <>
       {fields.length > 0 && (

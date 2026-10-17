@@ -122,6 +122,8 @@ export interface ReelInfo {
   /** Featured player's photo or clip for this project, and whether to cut them out of the background. */
   photo?: string;
   photoCutout?: boolean;
+  /** Heading of the stats board, when the default ("Season stats"...) doesn't fit. */
+  statsTitle?: string;
 }
 
 export interface ReelClip {
@@ -138,6 +140,10 @@ export interface ReelClip {
   set?: number;
   /** Where the action is over time (source seconds, 0..1 across the frame), from auto-follow. */
   track?: { t: number; x: number }[];
+  /** The spotted player's position over source time, from following them through the play. */
+  path?: { t: number; x: number; y: number }[];
+  /** Follow the play with a slow-motion instant replay. */
+  replay?: boolean;
 }
 
 export interface ReelAssets {

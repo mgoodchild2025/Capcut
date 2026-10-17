@@ -4,6 +4,7 @@ import {
   DEFAULT_SPOTLIGHT,
   detachAudioSelected,
   autoReframeSelected,
+  followSelectedPlayer,
   freezeFrameSelected,
   hasCopiedStyle,
   importFiles,
@@ -16,6 +17,7 @@ import {
   setCurveSelected,
   setSpotlightHold,
   setSpotlightSelected,
+  stopFollowingSelected,
   toggleKeyframe,
   updateSelected,
 } from '../actions';
@@ -345,6 +347,7 @@ const SPOT_COLORS = ['#ffd400', '#00e5ff', '#ff3b5c', '#39ff14', '#ffffff'];
 
 export function SpotlightPanel({ clip }: { clip: Clip }) {
   const pick = useEditor((s) => s.pick);
+  const busy = useEditor((s) => !!s.task);
   const sp = clip.spotlight;
   const set = (patch: Partial<NonNullable<Clip['spotlight']>>) =>
     updateSelected((c) => ({ spotlight: { ...DEFAULT_SPOTLIGHT, ...c.spotlight, ...patch } }));
@@ -385,6 +388,17 @@ export function SpotlightPanel({ clip }: { clip: Clip }) {
             </div>
             <Toggle label="Zoom towards the player" checked={sp.zoom} onChange={(zoom) => set({ zoom })} />
             <Slider label="Freeze length" value={clip.hold ?? 1.5} min={0.5} max={4} step={0.1} format={(v) => `${v.toFixed(1)}s`} defaultValue={1.5} onChange={setSpotlightHold} />
+          </Section>
+          <Section title="Follow through the clip">
+            <p className="muted small">Tracks your player after the freeze: a marker with the label rides above them, and wide footage in a narrow frame pans with them.</p>
+            <button className="btn block" disabled={busy} onClick={() => void followSelectedPlayer()}>
+              <Icon name="target" /> {clip.follow ? 'Follow again' : 'Follow this player'}
+            </button>
+            {clip.follow && (
+              <button className="btn block" onClick={stopFollowingSelected}>
+                Remove the marker
+              </button>
+            )}
           </Section>
         </>
       )}

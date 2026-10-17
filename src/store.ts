@@ -31,6 +31,29 @@ export interface EditorState {
   recording: { start: number } | null;
   /** Highlight reel wizard; `style` preselects a template. */
   wizard: { style?: import('./templates/reel').ReelStyle } | null;
+  /** Telestrator pen: drawing on the selected telestrator graphic in the preview. */
+  draw: { tool: import('./model/types').TeleMark['kind']; color: string } | null;
+  /** Playback stats overlay (press and hold the timecode, or add ?stats to the address). */
+  showStats: boolean;
+}
+
+const STATS_KEY = 'clipforge.stats';
+function statsOn(): boolean {
+  try {
+    if (typeof location !== 'undefined' && /[?&]stats\b/.test(location.search)) return true;
+    return typeof localStorage !== 'undefined' && localStorage.getItem(STATS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setShowStats(on: boolean) {
+  useEditor.setState({ showStats: on });
+  try {
+    localStorage.setItem(STATS_KEY, on ? '1' : '0');
+  } catch {
+    /* private mode */
+  }
 }
 
 /**
@@ -58,6 +81,8 @@ export const useEditor = create<EditorState>(() => ({
   pick: null,
   recording: null,
   wizard: null,
+  showStats: statsOn(),
+  draw: null,
 }));
 
 const get = useEditor.getState;

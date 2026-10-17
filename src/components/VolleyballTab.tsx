@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addHighlightsToTimeline, addSticker, addText, findHighlightsIn } from '../actions';
+import { addHighlightsToTimeline, addSticker, addTelestrator, addText, findHighlightsIn } from '../actions';
 import { highlightKey, toggleHighlight, useHighlights } from '../ai/highlightState';
 import { FONTS } from '../model/presets';
 import type { TextStyle } from '../model/types';
@@ -130,6 +130,17 @@ export function VolleyballTab() {
           {results && results.length === 0 && <p className="lib-note">Nothing stood out in that video. Try a longer stretch of game footage.</p>}
         </>
       )}
+
+      <h5 className="lib-h">Analyst's pen</h5>
+      <div className="row-btns">
+        <button className="btn" disabled={!!task} onClick={() => void addTelestrator(true)} title="Freeze the frame at the playhead and draw on it">
+          <Icon name="target" /> Freeze and draw
+        </button>
+        <button className="btn" onClick={() => void addTelestrator(false)} title="Draw over the moving video">
+          <Icon name="edit" /> Draw over video
+        </button>
+      </div>
+      <p className="lib-note">Circles, arrows and lines that draw themselves in, like a TV analyst's telestrator.</p>
 
       <h5 className="lib-h">Game text</h5>
       <div className="text-grid">

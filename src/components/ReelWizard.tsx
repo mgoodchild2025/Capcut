@@ -123,6 +123,8 @@ export function ReelWizard() {
   const [step, setStep] = useState<Step>(preset?.style ? 'player' : 'style');
   const [building, setBuilding] = useState(false);
   const [follow, setFollow] = useState(true);
+  const [followPlayer, setFollowPlayer] = useState(true);
+  const [playerReels, setPlayerReels] = useState<ReelStyle | null>('hype');
 
   const meta = styleOf(style);
   const team = meta.subject === 'team';
@@ -170,9 +172,11 @@ export function ReelWizard() {
     const ok = await buildReelFromWizard({
       style,
       info,
-      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player, score, set }) => ({ assetId, inPoint, duration, tag, spotlight, player, score, set })),
+      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay }) => ({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay })),
       musicId,
       follow,
+      followPlayer,
+      playerReels: meta.roster === 'credits' && playerReels ? playerReels : undefined,
     });
     setBuilding(false);
     if (ok) close();
@@ -218,8 +222,9 @@ export function ReelWizard() {
               follow={meta.aspect[0] < meta.aspect[1] || meta.aspect[0] * 5 === meta.aspect[1] * 4 ? { on: follow, set: setFollow } : null}
             />
           )}
-          {step === 'spotlight' && <SpotlightStep clips={clips} setClips={setClips} color={info.colors[1]} />}
+          {step === 'spotlight' && <SpotlightStep clips={clips} setClips={setClips} color={info.colors[1]} follow={{ on: followPlayer, set: setFollowPlayer }} />}
           {step === 'music' && <MusicStep musicId={musicId} setMusicId={setMusicId} style={style} />}
+          {step === 'music' && meta.roster === 'credits' && <PlayerReelsOption clips={clips} roster={info.roster} value={playerReels} onChange={setPlayerReels} />}
         </div>
 
         <footer className="wiz-foot">
@@ -1033,6 +1038,14 @@ function ClipPicker({
                       <option key={t}>{t}</option>
                     ))}
                   </select>
+                  <button
+                    className={`chip-btn replay-chip ${c.replay ? 'on' : ''}`}
+                    aria-pressed={!!c.replay}
+                    title="Show this play again in slow motion, with the analyst's pen on the player"
+                    onClick={() => setClips((list) => list.map((x) => (x.key === c.key ? { ...x, replay: !x.replay || undefined } : x)))}
+                  >
+                    <Icon name="replay" size={13} /> Replay
+                  </button>
                 </span>
                 {scoring && (
                   <span className="lineup-selects score-inputs">
@@ -1075,7 +1088,17 @@ function ClipPicker({
 
 // ---------- step 4: spotlight ----------
 
-function SpotlightStep({ clips, setClips, color }: { clips: WClip[]; setClips: (f: (c: WClip[]) => WClip[]) => void; color: string }) {
+function SpotlightStep({
+  clips,
+  setClips,
+  color,
+  follow,
+}: {
+  clips: WClip[];
+  setClips: (f: (c: WClip[]) => WClip[]) => void;
+  color: string;
+  follow: { on: boolean; set: (v: boolean) => void };
+}) {
   const assets = useEditor((s) => s.assets);
   const [i, setI] = useState(0);
   const [frames, setFrames] = useState<Record<string, string>>({});
@@ -1114,7 +1137,7 @@ function SpotlightStep({ clips, setClips, color }: { clips: WClip[]; setClips: (
   return (
     <section className="wiz-step spot-step">
       <h3 className="wiz-title">Spot your player</h3>
-      <p className="wiz-lede">Tap your player in each play. The reel freezes on this frame and rings them before the action. Skip any you like.</p>
+      <p className="wiz-lede">Tap your player in each play. The reel freezes on this frame and rings them before the action, then follows them. Skip any you like.</p>
       <div className="spot-stage" onPointerDown={place} style={{ aspectRatio: a?.width && a.height ? `${a.width} / ${a.height}` : '16 / 9' }}>
         {(frames[clip.key] ?? clip.thumb) && <img src={frames[clip.key] ?? clip.thumb} alt="" draggable={false} />}
         {clip.spotlight && (
@@ -1144,6 +1167,46 @@ function SpotlightStep({ clips, setClips, color }: { clips: WClip[]; setClips: (
           <button key={c.key} className={`${k === i ? 'on' : ''} ${c.spotlight ? 'set' : ''}`} onClick={() => setI(k)} aria-label={`Play ${k + 1}`} />
         ))}
       </div>
+      <label className="check follow-toggle">
+        <input type="checkbox" checked={follow.on} onChange={(e) => follow.set(e.target.checked)} />
+        <span>
+          <strong>Follow them through the play</strong>
+          <small>After the freeze, a marker with their number stays over your player, and vertical reels pan to keep them in the frame.</small>
+        </span>
+      </label>
+    </section>
+  );
+}
+
+/** Team reels: also make a reel for every player credited with a play. */
+function PlayerReelsOption({ clips, roster, value, onChange }: { clips: WClip[]; roster: RosterPlayer[]; value: ReelStyle | null; onChange: (v: ReelStyle | null) => void }) {
+  const credited = roster.filter((r) => (r.name.trim() || r.number.trim()) && clips.some((c) => c.player === r.key));
+  const names = credited.map((r) => r.name.trim().split(/\s+/)[0] || `#${r.number}`);
+  return (
+    <section className="player-reels">
+      <label className="check">
+        <input type="checkbox" checked={!!value && credited.length > 0} disabled={!credited.length} onChange={(e) => onChange(e.target.checked ? 'hype' : null)} />
+        <span>
+          <strong>Also make a reel for each player</strong>
+          <small>
+            {credited.length
+              ? `${credited.length} player${credited.length === 1 ? '' : 's'} with plays (${names.slice(0, 4).join(', ')}${names.length > 4 ? '...' : ''}). Each gets their own reel with their plays, photo and stats from the play labels, saved to your drafts. The game video isn't copied.`
+              : 'Credit plays to players on the clips step to make a reel for each of them.'}
+          </small>
+        </span>
+      </label>
+      {value && credited.length > 0 && (
+        <div className="player-reels-style" role="radiogroup" aria-label="Player reel format">
+          {(['hype', 'spotlight', 'recruiting'] as const).map((id) => {
+            const st = styleOf(id);
+            return (
+              <button key={id} role="radio" aria-checked={value === id} className={`chip-btn ${value === id ? 'on' : ''}`} onClick={() => onChange(id)}>
+                {st.title} <small>{aspectLabel(st.aspect)}</small>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

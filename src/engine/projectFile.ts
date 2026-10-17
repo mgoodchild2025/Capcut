@@ -32,7 +32,7 @@ export function mediaRefs(c: Clip): string[] {
   return [c.assetId, g?.logo, g?.oppLogo, g?.depth, ...(g?.players ?? []).map((p) => p.photo)].filter((x): x is string => !!x);
 }
 
-function remapClip(c: Clip, map: (id: string) => string): Clip {
+export function remapClip(c: Clip, map: (id: string) => string): Clip {
   const g = c.graphic;
   return {
     ...c,
@@ -112,7 +112,7 @@ export async function importProjectFile(file: Blob): Promise<string> {
   };
   await saveDraftRaw(
     next,
-    assets.map((a) => ({ meta: { ...a.meta, id: ids.get(a.meta.id)! }, blob: a.blob })),
+    assets.map((a) => ({ meta: { ...a.meta, id: ids.get(a.meta.id)!, blob: undefined }, blob: a.blob })),
     thumbnail,
   );
   return next.id;

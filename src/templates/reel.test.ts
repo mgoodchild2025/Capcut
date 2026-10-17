@@ -241,3 +241,87 @@ describe('broadcast reels', () => {
     expect(fin.text.result).toBe('ROCKETS win 2-1');
   });
 });
+
+describe('player reels from a team reel', () => {
+  const team = () =>
+    input('team', {
+      clips: [
+        { assetId: 'game1', inPoint: 30, duration: 7, tag: 'Kill', player: 'r1' },
+        { assetId: 'game2', inPoint: 10, duration: 6, tag: 'Kill', player: 'r1' },
+        { assetId: 'game1', inPoint: 50, duration: 5, tag: 'Ace', player: 'r1' },
+        { assetId: 'game2', inPoint: 30, duration: 6, tag: 'Dig', player: 'r3' },
+        { assetId: 'game1', inPoint: 80, duration: 8 },
+      ],
+      info: { ...info, name: 'Rockets' },
+    });
+
+  it('makes one per credited player, with their plays and stats from the labels', async () => {
+    const { playerReelInputs, plural } = await import('./playerReels');
+    const reels = playerReelInputs(team(), 'hype');
+    expect(reels.map((r) => r.player.key)).toEqual(['r1', 'r3']);
+    const jordan = reels[0].input;
+    expect(jordan.style).toBe('hype');
+    expect(jordan.clips).toHaveLength(3);
+    expect(jordan.info.name).toBe('Jordan Lee');
+    expect(jordan.info.club).toBe('Rockets');
+    expect(jordan.info.stats).toEqual([
+      ['Kills', '2'],
+      ['Aces', '1'],
+    ]);
+    expect(jordan.cards.photo).toBe('cut');
+    expect([plural('Catch'), plural('RBI'), plural('Home run'), plural('Assists')]).toEqual(['Catches', 'RBI', 'Home runs', 'Assists']);
+  });
+
+  it('builds each into a full player reel with the team score', async () => {
+    const { playerReelInputs } = await import('./playerReels');
+    const [jordan] = playerReelInputs(team(), 'spotlight');
+    const p = buildReel(jordan.input, assets);
+    expect(p.settings.width / p.settings.height).toBeCloseTo(1080 / 1350);
+    expect(main(p).filter((c) => c.kind === 'video')).toHaveLength(3);
+    expect(graphics(p, 'playerCard')).toHaveLength(1);
+    expect(graphics(p, 'stats')[0].graphic!.text.title).toBe('vs Westside Storm');
+    expect(graphics(p, 'final')).toHaveLength(1);
+    expect(graphics(p, 'lowerThird')[0].graphic!.text.name).toBe('Jordan Lee');
+  });
+});
+
+describe('instant replays', () => {
+  it('re-runs the play in slow motion with a REPLAY wipe and the analyst pen', () => {
+    const p = buildReel(input('recruiting', { clips: [{ assetId: 'game1', inPoint: 30, duration: 7, tag: 'Kill', spotlight: { x: 0.3, y: 0.55 }, replay: true }] }), assets);
+    const vids = main(p).filter((c) => c.kind === 'video');
+    expect(vids).toHaveLength(2);
+    const [play, rep] = vids;
+    expect(rep.speed).toBe(0.5);
+    expect(rep.inPoint).toBeGreaterThanOrEqual(30);
+    expect(rep.inPoint + 2.4).toBeLessThanOrEqual(37.01);
+    expect(rep.start).toBeCloseTo(play.start + play.duration);
+    expect(rep.hold).toBeGreaterThan(1);
+    const [wipe] = graphics(p, 'replay');
+    expect(wipe.start + 0.36).toBeCloseTo(rep.start);
+    expect(wipe.graphic!.text.tag).toBe('Kill');
+    const [tele] = graphics(p, 'telestrator');
+    const [ring, arrow] = tele.graphic!.marks!;
+    expect(ring.kind).toBe('circle');
+    // 16:9 footage in a 16:9 reel: the ring sits on the spotted player.
+    expect(ring.pts[0][0]).toBeCloseTo(0.3, 2);
+    expect(ring.pts[0][1]).toBeCloseTo(0.55, 2);
+    expect(arrow.kind).toBe('arrow');
+  });
+
+  it('skips the pen when no player is spotted', () => {
+    const p = buildReel(input('hype', { clips: [{ assetId: 'game1', inPoint: 30, duration: 7, replay: true }] }), assets);
+    expect(graphics(p, 'replay')).toHaveLength(1);
+    expect(graphics(p, 'telestrator')).toHaveLength(0);
+  });
+
+  it('follows a tracked player with the marker and the frame', () => {
+    const path = Array.from({ length: 71 }, (_, i) => ({ t: 30 + i / 10, x: 0.2 + i / 200, y: 0.5 }));
+    const p = buildReel(input('hype', { clips: [{ assetId: 'game1', inPoint: 30, duration: 7, spotlight: { x: 0.2, y: 0.5 }, path }] }), assets);
+    const [v] = main(p).filter((c) => c.kind === 'video');
+    expect(v.follow?.label).toBe('#12');
+    const keys = v.keyframes?.x ?? [];
+    expect(keys.length).toBeGreaterThan(1);
+    // The player moves right, so the frame pans left (x falls).
+    expect(keys[keys.length - 1].v).toBeLessThan(keys[0].v);
+  });
+});

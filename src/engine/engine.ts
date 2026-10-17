@@ -4,7 +4,7 @@ import type { Asset, Clip } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
 import { setLivePhotoReady } from './livePhoto';
-import { cssFilterFor, renderFrame, type DirectPlacement, type DrawBox, type Source } from './render';
+import { cssFilterFor, renderFrame, spotlightActive, type DirectPlacement, type DrawBox, type Source } from './render';
 import { motionFor } from './render';
 
 interface MediaEntry {
@@ -14,6 +14,8 @@ interface MediaEntry {
   /** Positions the element when the preview shows it directly. */
   wrap?: HTMLDivElement;
 }
+
+const blankStats = () => ({ frames: 0, ms: 0, slow: 0, worst: 0, seeks: 0, restarts: 0, stallMs: 0 });
 
 /** How long the clock may wait for the leading video to start or catch up before running on regardless. */
 const MAX_STALL_MS = 1200;
@@ -56,6 +58,9 @@ class Engine {
   /** Clips that hold a media element this frame; the rest are spares to reuse. */
   private claimed = new Set<string>();
   private lastLoop = 0;
+  /** Playback health counters for the stats overlay (counted while playing). */
+  stats = blankStats();
+  private playAsked = new WeakMap<HTMLMediaElement, number>();
   /**
    * Show the bottom video as a page element rather than copying every frame onto the canvas.
    * Copying is the slow part of playback on phones; desktops handle it fine, so it's on for touch devices.
@@ -251,9 +256,35 @@ class Engine {
     return entry;
   }
 
+  /** Moves a playing element to `t`, counting it: seeks are what make phones stutter. */
+  private seekEl(el: HTMLMediaElement, t: number) {
+    this.stats.seeks++;
+    el.currentTime = t;
+  }
+
+  /** A snapshot of playback health, with the shown video's own frame counts. */
+  statsSnapshot() {
+    const videos = [...this.media.values()].filter((m) => m.el instanceof HTMLVideoElement);
+    const lead = this.directShown?.el ?? (videos.find((m) => !m.el.paused) ?? videos[0])?.el;
+    const q = lead instanceof HTMLVideoElement && lead.getVideoPlaybackQuality ? lead.getVideoPlaybackQuality() : null;
+    return {
+      ...this.stats,
+      fps: this.stats.ms > 0 ? (this.stats.frames * 1000) / this.stats.ms : 0,
+      players: this.media.size,
+      direct: !!this.directShown,
+      dropped: q ? q.droppedVideoFrames : null,
+      decoded: q ? q.totalVideoFrames : null,
+    };
+  }
+
+  resetStats() {
+    this.stats = blankStats();
+  }
+
   /** Keeps the timeline where it is while the leading video starts or buffers, up to a limit. */
   private holdClock(t: number, dtMs: number) {
     this.stallMs += dtMs;
+    this.stats.stallMs += dtMs;
     if (this.stallMs > MAX_STALL_MS) return;
     this.clockStartTime = Math.max(0, t);
     this.clockStartWall = performance.now();
@@ -266,7 +297,7 @@ class Engine {
     const layer = activeLayers(project, t).find((l) => !l.track.hidden && l.track.kind !== 'audio' && l.clip.kind !== 'audio');
     if (!layer) return null;
     const { clip } = layer;
-    if (clip.kind !== 'video' || clip.chroma || clip.spotlight || clip.adjust.vignette > 0 || layer.transition) return null;
+    if (clip.kind !== 'video' || clip.chroma || spotlightActive(clip, layer.local) || clip.adjust.vignette > 0 || layer.transition) return null;
     if (motionFor(layer).wipe !== null) return null;
     const entry = this.media.get(clip.id);
     if (!entry || !(entry.el instanceof HTMLVideoElement) || !entry.el.videoWidth) return null;
@@ -446,14 +477,18 @@ class Engine {
             // rather than seeking it, since a seek stalls the start on phones.
             this.holdClock(t - off / rate, dtMs);
           } else {
-            if (Math.abs(off) > 0.05) el.currentTime = target;
+            if (Math.abs(off) > 0.05) this.seekEl(el, target);
             if (leads) this.holdClock(t, dtMs);
           }
+          // Paused stays true until it actually starts, so count each start once.
+          const asked = this.playAsked.get(el) ?? -1e9;
+          if (performance.now() - asked > 1000) this.stats.restarts++;
+          this.playAsked.set(el, performance.now());
           void el.play().catch(() => {});
         } else if (leads) {
           const drift = el.currentTime - target;
           if (Math.abs(drift) > 1.5 * Math.max(1, rate)) {
-            el.currentTime = target;
+            this.seekEl(el, target);
           } else if (el.seeking) {
             this.holdClock(t, dtMs);
           } else {
@@ -462,7 +497,7 @@ class Engine {
             if (Math.abs(drift) > 0.03) this.clockStartTime += (drift / rate) * 0.2;
           }
         } else if (Math.abs(el.currentTime - target) > 0.25 * Math.max(1, rate)) {
-          el.currentTime = target;
+          this.seekEl(el, target);
         }
       } else {
         if (!el.paused) el.pause();
@@ -501,7 +536,8 @@ class Engine {
 
   private loop = (now: number) => {
     requestAnimationFrame(this.loop);
-    const dtMs = this.lastLoop ? Math.min(100, now - this.lastLoop) : 0;
+    const rawDt = this.lastLoop ? now - this.lastLoop : 0;
+    const dtMs = Math.min(100, rawDt);
     this.lastLoop = now;
     const state = useEditor.getState();
     let t = state.currentTime;
@@ -522,6 +558,12 @@ class Engine {
     }
     const playing = useEditor.getState().playing;
     const project = useEditor.getState().project;
+    if (playing && rawDt > 0 && rawDt < 2000) {
+      this.stats.frames++;
+      this.stats.ms += rawDt;
+      if (rawDt > 50) this.stats.slow++;
+      this.stats.worst = Math.max(this.stats.worst, rawDt);
+    }
     // Clips end exactly at the timeline's end, so the very end would show an empty canvas.
     // Hold the last frame there instead, as players do.
     const end = projectDuration(project);

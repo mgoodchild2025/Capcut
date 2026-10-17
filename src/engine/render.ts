@@ -6,6 +6,7 @@ import { applyChroma } from './chroma';
 import { FILTERS } from '../model/presets';
 import type { AnimKind, Clip, Project, TransitionKind } from '../model/types';
 import { easeInOutCubic, easeOutBack, easeOutCubic } from '../utils';
+import { followAt } from '../ai/trackCore';
 
 /** Anything the compositor can draw a media frame from: live elements in preview, decoded canvases in export. */
 export type Source = HTMLVideoElement | HTMLImageElement | HTMLCanvasElement | OffscreenCanvas;
@@ -274,6 +275,8 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         const spot = clip.spotlight && clip.hold ? spotlightState(clip, layer.local) : null;
         if (opts.direct?.clipId === clip.id) {
           opts.direct.place({ clip, cx, cy, w, h, rotation, alpha, extraBlur: m.blur });
+          // The page shows the video; the canvas above it still carries the marker.
+          if (clip.follow) drawFollow(ctx, clip, layer.local, layer.sourceTime, w, h, Math.min(W, H));
           ctx.restore();
           boxes.push({ clipId: clip.id, cx, cy, w, h, rotation });
           continue;
@@ -304,6 +307,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
           ctx.fillStyle = g;
           ctx.fillRect(-w / 2, -h / 2, w, h);
         }
+        if (clip.follow) drawFollow(ctx, clip, layer.local, layer.sourceTime, w, h, Math.min(W, H));
       }
     } else if (clip.kind === 'graphic' && clip.graphic) {
       // Graphics draw in project coordinates; the clip's transform moves and scales the whole thing.
@@ -341,6 +345,59 @@ interface SpotState {
   ring: number;
   /** Seconds into the hold, for the pulse. */
   t: number;
+}
+
+/** True while the clip's freeze-frame spotlight is on screen (it needs the canvas to draw). */
+export function spotlightActive(clip: Clip, local: number): boolean {
+  return !!clip.spotlight && !!clip.hold && local <= clip.hold + 0.3;
+}
+
+/**
+ * The marker over a tracked player: a pointer and their name, riding above them once any
+ * spotlight has finished. Drawn in the clip's frame (centred, `w` x `h`).
+ */
+function drawFollow(ctx: CanvasRenderingContext2D, clip: Clip, local: number, sourceTime: number, w: number, h: number, shortSide: number) {
+  const f = clip.follow!;
+  if (!f.path.length) return;
+  // After the freeze (and any spotlight on it).
+  const startAt = (clip.hold ? clip.hold + (clip.spotlight ? 0.3 : 0) : 0) + 0.1;
+  const fade = Math.min(1, Math.max(0, (local - startAt) / 0.3), Math.max(0, (clip.duration - local) / 0.3));
+  if (fade <= 0) return;
+  const at = followAt(f.path, sourceTime);
+  const c = clip.crop;
+  let fx = c ? (at.x - c.left) / Math.max(0.01, 1 - c.left - c.right) : at.x;
+  const fy = c ? (at.y - c.top) / Math.max(0.01, 1 - c.top - c.bottom) : at.y;
+  if (clip.flipH) fx = 1 - fx;
+  const px = -w / 2 + fx * w;
+  // Above their head: taps land on the body, and a player is roughly a fifth of the frame tall.
+  const bob = Math.sin(local * 5) * shortSide * 0.004;
+  const tip = -h / 2 + (clip.flipV ? 1 - fy : fy) * h - h * 0.085 + bob;
+  const size = shortSide * 0.036 * (0.85 + 0.15 * easeOutBack(Math.min(1, fade)));
+  ctx.save();
+  ctx.globalAlpha *= easeOutCubic(fade);
+  ctx.fillStyle = f.color;
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = size * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(px, tip);
+  ctx.lineTo(px - size * 0.55, tip - size * 0.85);
+  ctx.lineTo(px + size * 0.55, tip - size * 0.85);
+  ctx.closePath();
+  ctx.fill();
+  if (f.label) {
+    ctx.font = `800 ${size * 1.05}px Inter, system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const tw = ctx.measureText(f.label).width + size * 1.1;
+    const ly = tip - size * 1.75;
+    ctx.beginPath();
+    ctx.roundRect(px - tw / 2, ly - size * 0.8, tw, size * 1.6, size * 0.8);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = contrastInk(f.color);
+    ctx.fillText(f.label, px, ly + size * 0.05);
+  }
+  ctx.restore();
 }
 
 /** Spotlight runs during the clip's hold and fades out over the following quarter second. */

@@ -26,6 +26,18 @@ export interface DraftSummary {
   duration: number;
 }
 
+/** Where a record's media is stored: its own id, or the asset whose media it shares. */
+const blobKey = (r: AssetRecord) => r.meta.blob ?? r.id;
+
+/** Deletes the media of removed asset records that no remaining record still uses. */
+async function dropUnusedBlobs(tx: IDBTransaction, removed: AssetRecord[]) {
+  if (!removed.length) return;
+  const gone = new Set(removed.map((r) => r.id));
+  const rest = (await request(tx.objectStore('assets').getAll() as IDBRequest<AssetRecord[]>)).filter((r) => !gone.has(r.id));
+  const used = new Set(rest.map(blobKey));
+  for (const key of new Set(removed.map(blobKey))) if (!used.has(key)) tx.objectStore('blobs').delete(key);
+}
+
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function db(): Promise<IDBDatabase> {
@@ -113,7 +125,7 @@ export async function loadDraft(id: string): Promise<{ project: Project; assets:
   );
   const assets: Record<string, Asset> = {};
   for (const r of records) {
-    const blob = await request(tx.objectStore('blobs').get(r.id) as IDBRequest<Blob | undefined>);
+    const blob = await request(tx.objectStore('blobs').get(blobKey(r)) as IDBRequest<Blob | undefined>);
     if (!blob) continue;
     assets[r.id] = { ...r.meta, url: URL.createObjectURL(blob) };
   }
@@ -123,11 +135,10 @@ export async function loadDraft(id: string): Promise<{ project: Project; assets:
 export async function deleteDraft(id: string): Promise<void> {
   const d = await db();
   const tx = d.transaction(['projects', 'assets', 'blobs'], 'readwrite');
-  const ids = await request(tx.objectStore('assets').index('projectId').getAllKeys(id));
-  for (const key of ids) {
-    tx.objectStore('assets').delete(key);
-    tx.objectStore('blobs').delete(key);
-  }
+  const records = await request(tx.objectStore('assets').index('projectId').getAll(id) as IDBRequest<AssetRecord[]>);
+  // Media shared with another draft stays until the last one using it goes.
+  await dropUnusedBlobs(tx, records);
+  for (const r of records) tx.objectStore('assets').delete(r.id);
   tx.objectStore('projects').delete(id);
   await done(tx);
 }
@@ -143,8 +154,9 @@ export async function renameDraft(id: string, name: string): Promise<void> {
 export async function deleteAssetRecord(id: string): Promise<void> {
   const d = await db();
   const tx = d.transaction(['assets', 'blobs'], 'readwrite');
+  const rec = await request(tx.objectStore('assets').get(id) as IDBRequest<AssetRecord | undefined>);
+  if (rec) await dropUnusedBlobs(tx, [rec]);
   tx.objectStore('assets').delete(id);
-  tx.objectStore('blobs').delete(id);
   await done(tx);
 }
 
@@ -159,8 +171,9 @@ export async function readDraftRaw(
   const records = await request(tx.objectStore('assets').index('projectId').getAll(id) as IDBRequest<AssetRecord[]>);
   const assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] = [];
   for (const r of records) {
-    const blob = await request(tx.objectStore('blobs').get(r.id) as IDBRequest<Blob | undefined>);
-    if (blob) assets.push({ meta: r.meta, blob });
+    const blob = await request(tx.objectStore('blobs').get(blobKey(r)) as IDBRequest<Blob | undefined>);
+    // A file carries its own copy of everything.
+    if (blob) assets.push({ meta: { ...r.meta, blob: undefined }, blob });
   }
   return { project: rec.project, thumbnail: rec.thumbnail, assets };
 }
@@ -174,5 +187,17 @@ export async function saveDraftRaw(project: Project, assets: { meta: Omit<Asset,
     tx.objectStore('assets').put({ id: a.meta.id, projectId: project.id, meta: a.meta } satisfies AssetRecord);
     tx.objectStore('blobs').put(a.blob, a.meta.id);
   }
+  await done(tx);
+}
+
+/**
+ * Stores a draft whose media all lives in other drafts already (each asset's `blob` names the
+ * stored media it uses), so a reel per player doesn't copy the game video once per player.
+ */
+export async function saveDraftShared(project: Project, assets: Asset[], thumbnail?: string): Promise<void> {
+  const d = await db();
+  const tx = d.transaction(['projects', 'assets'], 'readwrite');
+  tx.objectStore('projects').put({ id: project.id, project, thumbnail, updatedAt: project.updatedAt } satisfies ProjectRecord);
+  for (const a of assets) tx.objectStore('assets').put({ id: a.id, projectId: project.id, meta: stripUrl(a) } satisfies AssetRecord);
   await done(tx);
 }

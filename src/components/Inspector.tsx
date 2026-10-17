@@ -13,7 +13,7 @@ import {
   TRANSITIONS,
 } from '../model/presets';
 import type { AnimKind, Clip, TextStyle, TransitionKind } from '../model/types';
-import { edit, selectedClip, useEditor } from '../store';
+import { edit, selectedClip, setShowStats, useEditor } from '../store';
 import { ColorField, gestureProps, Section, Segmented, Slider, Toggle } from '../ui/controls';
 import { CropSection, CurveSection, CutoutPanel, KeyframeNav, KeySlider, QuickActions, SpotlightPanel } from './ClipTools';
 import { GraphicPanel } from './GraphicPanel';
@@ -336,6 +336,7 @@ function AdjustPanel({ clip }: { clip: Clip }) {
 
 function ProjectPanel() {
   const project = useEditor((s) => s.project);
+  const showStats = useEditor((s) => s.showStats);
   const { settings } = project;
   const aspect = aspectIdFor(settings.width, settings.height);
   const setSettings = (patch: Partial<typeof settings>) => edit((p) => ({ ...p, settings: { ...p.settings, ...patch } }));
@@ -379,6 +380,10 @@ function ProjectPanel() {
             onChange={(fps) => setSettings({ fps })}
             options={[24, 25, 30, 50, 60].map((f) => ({ value: f, label: String(f) }))}
           />
+        </Section>
+        <Section title="Diagnostics">
+          <Toggle label="Playback stats" checked={showStats} onChange={setShowStats} />
+          <p className="muted small">On a phone, press and hold the timecode under the preview to show or hide them.</p>
         </Section>
         <Section title="Shortcuts">
           <dl className="shortcuts">

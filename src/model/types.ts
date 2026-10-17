@@ -14,6 +14,8 @@ export interface Asset {
   thumbnail?: string;
   /** A working file (such as a depth map) kept out of the media library. */
   internal?: boolean;
+  /** The media is stored under this other asset's id (drafts that share one game video). */
+  blob?: string;
   /** Evenly spaced frames across the source, as data URLs. */
   filmstrip?: string[];
   /** Normalised peak values (0..1), WAVEFORM_RATE per second of source. */
@@ -40,7 +42,14 @@ export interface Track {
 
 export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'graphic';
 
-export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer';
+export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator';
+
+/** A telestrator drawing: points are fractions of the frame. Circles are [centre, edge]; arrows and lines [from, to]. */
+export interface TeleMark {
+  kind: 'arrow' | 'circle' | 'line' | 'pen';
+  pts: [number, number][];
+  color: string;
+}
 
 /** A broadcast motion graphic, drawn procedurally each frame (see engine/graphics.ts). */
 export interface GraphicSpec {
@@ -70,6 +79,8 @@ export interface GraphicSpec {
   depth?: string;
   /** Show the photo still even though it has a depth map. */
   still?: boolean;
+  /** Telestrator drawings, drawn in order. */
+  marks?: TeleMark[];
 }
 
 export type GraphicLook = 'broadcast' | 'championship' | 'neon' | 'classic';
@@ -196,6 +207,14 @@ export interface Spotlight {
   zoom: boolean;
 }
 
+/** A name marker that rides above a tracked player through the clip. */
+export interface Follow {
+  /** Where the player is over source time, as fractions of the source frame. */
+  path: { t: number; x: number; y: number }[];
+  color: string;
+  label: string;
+}
+
 export interface Marker {
   id: string;
   t: number;
@@ -238,6 +257,7 @@ export interface Clip {
   /** Seconds the first frame is held before playback starts (used by Spotlight). */
   hold?: number;
   spotlight?: Spotlight;
+  follow?: Follow;
   keyframes?: Partial<Record<KeyProp, Keyframe[]>>;
   crop?: Crop;
   flipH?: boolean;

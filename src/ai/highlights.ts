@@ -1,4 +1,5 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from 'mediabunny';
+import { decodeAudio } from '../engine/audioDecode';
 import type { Asset } from '../model/types';
 import { audioFeatures, findHighlights, frameDiff, type Features, type Highlight } from './highlightCore';
 
@@ -12,18 +13,13 @@ const MOTION_W = 64;
 const MOTION_H = 36;
 
 async function audioPart(asset: Asset, signal: AbortSignal): Promise<Pick<Features, 'audioHop' | 'loudness' | 'whistle'>> {
-  const data = await (await fetch(asset.url)).arrayBuffer();
-  if (signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+  const blob = await (await fetch(asset.url)).blob();
   try {
-    const ctx = new OfflineAudioContext(1, 1, 16000);
-    const buf = await ctx.decodeAudioData(data);
-    const mono = buf.getChannelData(0);
-    if (buf.numberOfChannels > 1) {
-      const r = buf.getChannelData(1);
-      for (let i = 0; i < mono.length; i++) mono[i] = (mono[i] + r[i]) / 2;
-    }
-    return audioFeatures(mono, buf.sampleRate);
-  } catch {
+    const audio = await decodeAudio(blob, { sampleRate: 16000, mono: true, signal });
+    if (!audio) throw new Error('no audio');
+    return audioFeatures(audio.channels[0], audio.sampleRate);
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e;
     // Silent footage: motion alone still finds the action.
     const frames = Math.ceil(asset.duration / 0.05);
     return { audioHop: 0.05, loudness: new Float32Array(frames).fill(-90), whistle: new Float32Array(frames) };

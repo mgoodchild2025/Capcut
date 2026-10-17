@@ -15,7 +15,9 @@ import { Icon } from '../ui/Icon';
 import { isTypingTarget } from '../utils';
 import { ExportDialog } from './ExportDialog';
 import { Inspector } from './Inspector';
+import { useIsMobile } from '../ui/useMediaQuery';
 import { Library } from './Library';
+import { MobileWorkspace } from './MobileWorkspace';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 
@@ -24,6 +26,7 @@ export function Editor() {
   const [fileDrag, setFileDrag] = useState(false);
   const name = useEditor((s) => s.project.name);
   const hasClips = useEditor((s) => s.project.clips.length > 0);
+  const mobile = useIsMobile();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -76,7 +79,7 @@ export function Editor() {
 
   return (
     <div
-      className="editor"
+      className={`editor ${mobile ? 'mobile' : ''}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -114,16 +117,22 @@ export function Editor() {
         </div>
         <div className="topbar-right">
           <button className="btn primary" disabled={!hasClips} onClick={() => setExporting(true)}>
-            <Icon name="export" /> Export
+            <Icon name="export" /> <span className="hide-xs">Export</span>
           </button>
         </div>
       </header>
-      <div className="workspace">
-        <Library />
-        <Preview />
-        <Inspector />
-      </div>
-      <Timeline />
+      {mobile ? (
+        <MobileWorkspace />
+      ) : (
+        <>
+          <div className="workspace">
+            <Library />
+            <Preview />
+            <Inspector />
+          </div>
+          <Timeline />
+        </>
+      )}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {fileDrag && <div className="drop-overlay">Drop to import</div>}
     </div>

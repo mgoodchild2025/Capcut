@@ -8,6 +8,8 @@ A CapCut-style video editor that runs entirely in the browser. Media never leave
 - **Media library**: import video, photos and audio by picker or drag and drop. Thumbnails, timeline filmstrips and audio waveforms are generated on import.
 - **Multi-track timeline**: magnetic main track, overlay video tracks, text tracks and audio tracks. Drag clips between tracks, trim either edge, split, duplicate, ripple delete, snap to edges and the playhead, zoom (Ctrl + wheel), and mute, hide or lock tracks.
 - **Preview canvas**: real-time compositing with on-canvas move, scale and rotate handles plus centre guides.
+- **Automatic captions**: speech recognition (Whisper, via Transformers.js) runs in a background worker on your device, using WebGPU when available. Captions land on their own track as editable text clips in Classic, Boxed, Karaoke or Pop styles, with word-by-word highlighting. The first run downloads a speech model of about 80 to 150 MB from Hugging Face, which the browser caches.
+- **Phones and tablets**: a touch layout with the preview on top, the timeline beneath and tools in bottom sheets. Tap to select, drag a selected clip, pinch the timeline to zoom, and pinch or twist in the preview to scale and rotate.
 - **Text and stickers**: text templates, fonts, size, colour, stroke, background, alignment and shadow, plus an emoji sticker set.
 - **Look**: 14 filter presets, plus brightness, contrast, saturation, hue, blur and vignette.
 - **Motion**: in and out animations (fade, slide, zoom, spin, pop) and transitions between clips (dissolve, dip to black, push, wipe, zoom, blur).
@@ -53,7 +55,8 @@ src/
     render.ts   Canvas compositor: layout, filters, animations, transitions, text, hit-testing
     media.ts    Import, metadata, thumbnails, filmstrips and waveforms
     persist.ts  IndexedDB drafts (projects, asset metadata and media blobs)
-  components/   React UI: Home, Editor, Library, Preview, Inspector, Timeline, ExportDialog
+  captions/     Caption grouping and styles, audio windowing, and the Whisper worker
+  components/   React UI: Home, Editor, Library, Preview, Inspector, Timeline, ExportDialog, MobileWorkspace
   store.ts      Zustand store with undo/redo history and gesture grouping
   actions.ts    User-level commands that combine the store, engine and persistence
 ```

@@ -10,7 +10,11 @@ import { formatTimecode } from '../utils';
 type Drag =
   | { mode: 'move'; startX: number; startY: number; x0: number; y0: number }
   | { mode: 'scale'; cx: number; cy: number; d0: number; s0: number }
-  | { mode: 'rotate'; cx: number; cy: number; a0: number; r0: number };
+  | { mode: 'rotate'; cx: number; cy: number; a0: number; r0: number }
+  | { mode: 'pinch'; d0: number; a0: number; s0: number; r0: number };
+
+type Pt = { x: number; y: number };
+const span = (a: Pt, b: Pt) => ({ d: Math.hypot(a.x - b.x, a.y - b.y) || 1, a: Math.atan2(b.y - a.y, b.x - a.x) });
 
 export function Preview() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -22,6 +26,8 @@ export function Preview() {
   const [box, setBox] = useState<DrawBox | null>(null);
   const [guides, setGuides] = useState({ v: false, h: false });
   const drag = useRef<Drag | null>(null);
+  const pointers = useRef(new Map<number, Pt>());
+  const gestureOpen = useRef(false);
 
   // Fit the stage inside the available space while keeping the project aspect ratio.
   useLayoutEffect(() => {
@@ -92,6 +98,20 @@ export function Preview() {
   const onStageDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const pt = toProject(e);
+    pointers.current.set(e.pointerId, pt);
+    // A second finger on a selected clip turns the gesture into pinch-to-scale and twist-to-rotate.
+    if (pointers.current.size === 2) {
+      const tr = currentTransform();
+      if (tr && gestureOpen.current) {
+        const [a, b] = [...pointers.current.values()];
+        const g = span(a, b);
+        drag.current = { mode: 'pinch', d0: g.d, a0: g.a, s0: tr.scale, r0: tr.rotation };
+        setGuides({ v: false, h: false });
+        (e.target as Element).setPointerCapture(e.pointerId);
+      }
+      return;
+    }
+    if (pointers.current.size > 2) return;
     const hit = hitTest(engine.boxes, pt.x, pt.y);
     if (!hit) {
       select(null);
@@ -103,6 +123,7 @@ export function Preview() {
     if (!clip || track?.locked) return;
     drag.current = { mode: 'move', startX: pt.x, startY: pt.y, x0: clip.transform.x, y0: clip.transform.y };
     beginGesture();
+    gestureOpen.current = true;
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
@@ -117,14 +138,28 @@ export function Preview() {
       drag.current = { mode, cx: box.cx, cy: box.cy, a0: Math.atan2(pt.y - box.cy, pt.x - box.cx), r0: tr.rotation };
     }
     beginGesture();
+    gestureOpen.current = true;
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
   const onMove = (e: React.PointerEvent) => {
+    const pt = toProject(e);
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, pt);
     const d = drag.current;
     if (!d) return;
-    const pt = toProject(e);
-    if (d.mode === 'move') {
+    if (d.mode === 'pinch') {
+      if (pointers.current.size < 2) return;
+      const [a, b] = [...pointers.current.values()];
+      const g = span(a, b);
+      const scale = Math.max(0.05, Math.min(10, (d.s0 * g.d) / d.d0));
+      let rot = d.r0 + ((g.a - d.a0) * 180) / Math.PI;
+      rot = ((((rot + 180) % 360) + 360) % 360) - 180;
+      const snapped = Math.round(rot / 90) * 90;
+      if (Math.abs(snapped - rot) < 5) rot = snapped;
+      updateSelected((c) => ({
+        transform: { ...c.transform, scale: Math.round(scale * 100) / 100, rotation: Math.round(rot * 10) / 10 },
+      }));
+    } else if (d.mode === 'move') {
       let x = d.x0 + (pt.x - d.startX) / settings.width;
       let y = d.y0 + (pt.y - d.startY) / settings.height;
       const snapV = Math.abs(x) < 0.012 && !e.altKey;
@@ -149,10 +184,17 @@ export function Preview() {
     }
   };
 
-  const onUp = () => {
-    if (drag.current) endGesture();
-    drag.current = null;
+  const onUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
     setGuides({ v: false, h: false });
+    if (pointers.current.size > 0) {
+      // Lifting one finger of a pinch pauses it; the gesture ends when the last finger lifts.
+      if (drag.current?.mode === 'pinch') drag.current = null;
+      return;
+    }
+    if (gestureOpen.current) endGesture();
+    gestureOpen.current = false;
+    drag.current = null;
   };
 
   return (

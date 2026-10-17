@@ -9,6 +9,7 @@ const PATHS: Record<string, string> = {
   media: 'M3 5h18v14H3zM10 9.5v5l4.5-2.5z',
   audio: 'M9 18V6l11-2v12M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM20 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z',
   text: 'M5 6V4h14v2M12 4v16M9 20h6',
+  captions: 'M3 5h18v14H3zM7 15h4M13 15h4M7 11h10',
   sticker: 'M12 21a9 9 0 1 1 9-9v1l-8 8zM8.5 10h.01M15.5 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0',
   filter: 'M9 13a6 6 0 1 0 0-.01M15 13a6 6 0 1 0 0-.01M12 7.5a6 6 0 1 0 .01 0',
   transition: 'M4 5h7v14H4zM13 5h7v14h-7zM9 12h6M13 10l2 2-2 2',

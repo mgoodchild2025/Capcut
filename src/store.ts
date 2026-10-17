@@ -5,7 +5,7 @@ import type { Asset, Project } from './model/types';
 
 const HISTORY_LIMIT = 100;
 
-export type LeftTab = 'media' | 'audio' | 'text' | 'stickers' | 'filters' | 'transitions';
+export type LeftTab = 'media' | 'audio' | 'text' | 'captions' | 'stickers' | 'filters' | 'transitions';
 
 export interface EditorState {
   view: 'home' | 'editor';

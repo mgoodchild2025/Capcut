@@ -26,6 +26,8 @@ export interface Track {
   kind: TrackKind;
   /** The main video track cannot be deleted and sits at the bottom of the visual stack. */
   main?: boolean;
+  /** Holds auto-generated captions; regenerated captions replace this track's clips. */
+  captions?: boolean;
   muted: boolean;
   hidden: boolean;
   locked: boolean;
@@ -90,6 +92,19 @@ export interface TextStyle {
   shadow: boolean;
 }
 
+export interface CaptionWord {
+  text: string;
+  /** Start and end in clip source time: `inPoint + local * speed`, so splitting a caption keeps timings valid. */
+  start: number;
+  end: number;
+}
+
+export interface Caption {
+  words: CaptionWord[];
+  /** Colour of the word being spoken, or null for no word highlight. */
+  highlight: string | null;
+}
+
 export interface Clip {
   id: string;
   trackId: string;
@@ -118,6 +133,7 @@ export interface Clip {
   transition: TransitionKind;
   transitionDur: number;
   text?: TextStyle;
+  caption?: Caption;
   sticker?: string;
 }
 

@@ -32,7 +32,7 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 3. Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
 4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them with the sport's plays (Kill, Three, Goal, Home run...) and credit them to players.
 5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them, then **follows them through the play**. An on-device tracker (template matching on small colour frames, run forwards and backwards from your tap) keeps a marker with their number above them, and narrower reels pan with them.
-6. Choose a music track, or **your own song** from your device (beat-cut reels find its beats and cut on them), and press **Build my reel**. Select any graphic in the editor to change its words and colours.
+6. Choose a studio-recorded music track (each style recommends one), or **your own song** from your device (beat-cut reels find its beats and cut on them), and press **Build my reel**. Select any graphic in the editor to change its words and colours.
 7. **A reel for every player**: a team reel can also make one reel per player credited with a play, as a hype reel, player spotlight or recruiting reel. Each gets their plays, their photo and a stats board counted from the play labels (2 Kills, 1 Ace), and is saved to your drafts. The drafts share the stored game video rather than copying it; the media is freed when the last draft using it is deleted.
 
 In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw** freezes the frame at the playhead and adds a telestrator; **Draw over video** draws on the moving picture. Pick circle, arrow, line or freehand and a colour from the bar under the preview; marks draw themselves in one after another on playback. A clip with a spotlight can also **Follow this player** from its spotlight panel.
@@ -63,7 +63,7 @@ In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw**
 - **Text**: templates, fonts, stroke, background and shadow, plus emoji stickers.
 - **Automatic captions**: on-device Whisper, in Classic, Boxed, Karaoke or Pop styles with word highlighting.
 - **Audio**:
-  - Five built-in royalty-free music tracks and twelve sound effects, synthesised in the browser.
+  - Eight studio-recorded music tracks and recorded sound effects (whoosh, slam, crowd cheer, hit, boom, swish), all public domain (CC0), plus five generated tracks and twelve generated effects. Reels add the crowd under the final score, and start the song on a beat so every cut lands on the music.
   - Voiceover recording and AI text-to-speech.
   - Beat detection with bar markers, and **Sync cuts to the beat**.
 - **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing. On phones, **Save to Photos** / **Share** hands the video to the share sheet.
@@ -112,7 +112,7 @@ Use a recent Chrome or Edge for the widest codec support. Firefox and Safari wor
 src/
   model/       Data model, timeline operations, timing (speed curves, holds, keyframes)
   engine/      Playback engine, canvas compositor, chroma key, WebCodecs export, audio mix, frames, drafts
-  audio/       Music and SFX synthesiser, WAV encoder, beat detection and cut-to-beat
+  audio/       Bundled sound library (files in public/audio), music and SFX synthesiser, WAV encoder, beat detection and cut-to-beat
   ai/          Highlight finder, background removal and TTS workers
   captions/    Caption grouping and styles, audio windowing, Whisper worker
   templates/   Reel builder and team-colour card artwork
@@ -120,3 +120,22 @@ src/
 ```
 
 The preview, export and audio mix all read the same timing model (`model/timing.ts`) and compositor (`engine/render.ts`), so what you see is what you export.
+
+## Music and sound credits
+
+Every bundled recording is dedicated to the public domain (CC0) by its creator, so reels can be posted anywhere. Credit isn't required, but here it is with thanks:
+
+| Sound | Creator | Source |
+| --- | --- | --- |
+| Lucid Trigger | Liq_mmry | [OpenGameArt](https://opengameart.org/content/lucid-trigger) |
+| Hyper Ultra-Racing | cynicmusic | [OpenGameArt](https://opengameart.org/content/hyper-ultra-racing) |
+| Doomed, Warped, Great Mission | Alexander Ehlers | [OpenGameArt](https://opengameart.org/content/free-music-pack) |
+| Determined Pursuit | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
+| Rhythm Factory | Zane Little Music | [OpenGameArt](https://opengameart.org/content/rhythm-factory) |
+| Funked Up | Joth | [OpenGameArt](https://opengameart.org/content/funked-up) |
+| Whoosh | bosslevelaudio | [OpenGameArt](https://opengameart.org/content/wierd-whooshes) |
+| Slam, Hit, Boom | Kenney | [Impact Sounds](https://kenney.nl/assets/impact-sounds), [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
+| Crowd cheer | eXpl0it3r | [OpenGameArt](https://opengameart.org/content/applause-in-a-large-hall-or-church) |
+| Swish | artisticdude | [OpenGameArt](https://opengameart.org/content/swishes-sound-pack) |
+
+Tracks are trimmed to at most 110 seconds and mastered to -12 LUFS (-1 dBTP); beat maps come from the app's beat detector, checked against each track's drum hits.

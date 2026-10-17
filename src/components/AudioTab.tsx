@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { addMusic, addSfx, generateSpeech, startVoiceover, stopPreviewSound, stopVoiceover, togglePreviewSound } from '../actions';
 import { TTS_VOICES } from '../ai/tts';
+import { LIBRARY_MUSIC, LIBRARY_SFX } from '../audio/library';
 import { MUSIC, SFX, trackLength } from '../audio/synth';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
@@ -41,11 +42,14 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
 
       {section === 'music' && (
         <>
-          <p className="lib-note">Royalty-free tracks made right in your browser. Beats are known, so cuts can snap to them.</p>
+          <p className="lib-note">Studio recordings, free to use anywhere (CC0). Beats are known, so cuts can snap to them.</p>
           <ul className="music-list">
-            {MUSIC.map((m) => {
+            {[
+              ...LIBRARY_MUSIC.map((m) => ({ ...m, mood: `${m.mood} · ${m.artist}` })),
+              ...MUSIC.map((m) => ({ ...m, mood: `${m.mood} · Generated`, seconds: trackLength(m).seconds })),
+            ].map((m) => {
               const key = `music:${m.id}`;
-              const { seconds } = trackLength(m);
+              const { seconds } = m;
               return (
                 <li key={m.id} className="music-item">
                   <button
@@ -69,6 +73,9 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
               );
             })}
           </ul>
+          <p className="lib-note subtle">
+            Music by Liq_mmry, cynicmusic, Alexander Ehlers, Emma_MA, Zane Little Music and Joth; sounds by Kenney and OpenGameArt artists. All released to the public domain (CC0).
+          </p>
         </>
       )}
 
@@ -76,7 +83,7 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
         <>
           <p className="lib-note">Tap to hear, + to drop at the playhead.</p>
           <div className="sfx-grid">
-            {SFX.map((x) => {
+            {[...LIBRARY_SFX, ...SFX.filter((x) => !LIBRARY_SFX.some((r) => r.id === x.id))].map((x) => {
               const key = `sfx:${x.id}`;
               return (
                 <div key={x.id} className={`sfx-item ${playing === key ? 'playing' : ''}`}>

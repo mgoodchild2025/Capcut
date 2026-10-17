@@ -4813,3 +4813,24 @@ input[type='range']::-moz-range-thumb {
   gap: 8px;
   cursor: pointer;
 }
+
+/* Wizard: the generated beats, tucked away below the recordings. */
+.more-music {
+  margin-top: 14px;
+}
+.more-music > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 0;
+}
+.more-music[open] > summary {
+  margin-bottom: 8px;
+}
+
+.lib-note.subtle {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 10px;
+}

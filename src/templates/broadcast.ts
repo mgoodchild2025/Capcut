@@ -267,8 +267,10 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
 
   // ---------- final score ----------
   const sets = playedSets(info);
+  let cheerFrom: number | null = null;
   if (sets.length && input.style !== 'lineup') {
     stinger();
+    cheerFrom = end();
     const [ours, theirs] = finalTotals(sport, sets);
     const result = ours > theirs ? `${usName} win ${ours}-${theirs}` : ours < theirs ? `${themName} win ${theirs}-${ours}` : `Tied ${ours}-${theirs}`;
     full('final', { usName, themName, result, periodPrefix: sport.scoring.result === 'sets' ? 'S' : sport.scoring.short === 'INN' ? '' : sport.scoring.short[0], periodLabel: sport.scoring.short }, fit(5), { sets, scoring: sport.scoring.result }, 'Final');
@@ -276,6 +278,7 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
 
   // ---------- closer ----------
   stinger();
+  cheerFrom ??= end();
   const closer: Record<string, string> =
     input.style === 'recruiting'
       ? { kicker: [num && `#${num}`, info.gradYear && `CLASS OF ${info.gradYear}`].filter(Boolean).join(' · '), title: upper(name), sub: [info.email, info.phone, [info.club, info.school].filter(Boolean).join(' · ')].filter(Boolean).join('\n') }
@@ -301,10 +304,14 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
       p = placeClip(p, st, added.track.id);
     }
   }
+  // Cuts are timed in bars from the start, so start the song on a beat: skip the fraction of a
+  // beat before its grid (recordings rarely begin exactly on one).
+  const lead = music?.beats?.length && beat ? music.beats[0] % beat : 0;
   if (music) {
     const m = createMediaClip(music);
     m.start = 0;
-    m.duration = Math.min(m.duration, total);
+    m.inPoint = lead;
+    m.duration = Math.min(m.duration - lead, total);
     m.volume = look.musicVolume;
     m.audioFadeOut = Math.min(2.5, m.duration / 4);
     p = placeClip(p, m);
@@ -316,8 +323,21 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
     if (look.beat) for (const c of p.clips) if (c.trackId === main.id && c.start > 0.5) cuts.add(+c.start.toFixed(3));
     for (const t of cuts) p = placeClip(p, { ...createMediaClip(whoosh), start: Math.max(0, t - 0.35), volume: 0.55, id: uid('c_') });
   }
+  // The crowd rises under the result and the send-off (the lineup is pre-game, so it stays quiet).
+  const crowd = cards.crowd ? assets[cards.crowd] : undefined;
+  if (crowd && input.style !== 'lineup' && cheerFrom !== null) {
+    const from = Math.max(0, cheerFrom - 0.3);
+    const c = { ...createMediaClip(crowd), start: from, volume: look.beat ? 0.35 : 0.45, id: uid('c_') };
+    c.duration = Math.min(crowd.duration, total - from);
+    c.audioFadeIn = Math.min(0.8, c.duration / 3);
+    c.audioFadeOut = Math.min(2, c.duration / 3);
+    p = placeClip(p, c);
+  }
   if (cards.impact && assets[cards.impact]) p = placeClip(p, { ...createMediaClip(assets[cards.impact]), start: 0.35, volume: look.beat ? 0.8 : 0.5 });
-  if (music?.beats && music.bpm) p = { ...p, markers: music.beats.filter((b, i) => i % 4 === 0 && b < total).map((t) => ({ id: uid('m_'), t, label: 'beat', color: '#00c2d1' })) };
+  if (music?.beats && music.bpm) {
+    const onTimeline = music.beats.map((b) => b - lead).filter((t) => t >= -0.01);
+    p = { ...p, markers: onTimeline.filter((t, i) => i % 4 === 0 && t < total).map((t) => ({ id: uid('m_'), t: Math.max(0, t), label: 'beat', color: '#00c2d1' })) };
+  }
   return p;
 }
 

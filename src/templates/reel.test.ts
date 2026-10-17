@@ -325,3 +325,33 @@ describe('instant replays', () => {
     expect(keys[keys.length - 1].v).toBeLessThan(keys[0].v);
   });
 });
+
+describe('crowd', () => {
+  const withCrowd = { ...assets, crowd: asset('crowd', 'audio', 12) };
+  it('cheers under the final score and the send-off', () => {
+    const p = buildReel(input('recruiting', { cards: { ...input('recruiting').cards, crowd: 'crowd' } }), withCrowd);
+    const [final] = graphics(p, 'final');
+    const cheer = p.clips.find((c) => c.assetId === 'crowd')!;
+    expect(cheer.start).toBeCloseTo(final.start - 0.3);
+    const total = Math.max(...p.clips.map((c) => c.start + c.duration));
+    expect(cheer.start + cheer.duration).toBeLessThanOrEqual(total + 1e-6);
+    expect(cheer.audioFadeOut).toBeGreaterThan(0);
+  });
+  it('stays quiet before the game (starting lineup)', () => {
+    const p = buildReel(input('lineup', { cards: { ...input('lineup').cards, crowd: 'crowd' } }), withCrowd);
+    expect(p.clips.some((c) => c.assetId === 'crowd')).toBe(false);
+  });
+});
+
+describe('songs that start between beats', () => {
+  it('start on a beat, so cuts on the bar land on the music', () => {
+    // 120 BPM with the first beat 0.3 s in, like most recordings.
+    const song = asset('song', 'audio', 90, { bpm: 120, beats: Array.from({ length: 170 }, (_, i) => 0.3 + i * 0.5) });
+    const p = buildReel(input('hype', { cards: { ...input('hype').cards, music: 'song' } }), { ...assets, song });
+    const m = p.clips.find((c) => c.assetId === 'song')!;
+    expect(m.inPoint).toBeCloseTo(0.3);
+    const beatsOnTimeline = song.beats!.map((b) => b - m.inPoint);
+    for (const c of main(p)) expect(Math.min(...beatsOnTimeline.map((b) => Math.abs(b - c.start)))).toBeLessThan(0.01);
+    expect(p.markers![0].t).toBeCloseTo(0);
+  });
+});

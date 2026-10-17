@@ -15,10 +15,11 @@ import {
 import type { AnimKind, Clip, TextStyle, TransitionKind } from '../model/types';
 import { edit, selectedClip, useEditor } from '../store';
 import { ColorField, gestureProps, Section, Segmented, Slider, Toggle } from '../ui/controls';
+import { CropSection, CurveSection, CutoutPanel, KeyframeNav, KeySlider, QuickActions, SpotlightPanel } from './ClipTools';
 import { Icon } from '../ui/Icon';
 import { formatTimecode } from '../utils';
 
-type Tab = 'text' | 'basic' | 'audio' | 'speed' | 'animation' | 'adjust';
+type Tab = 'text' | 'basic' | 'audio' | 'speed' | 'animation' | 'adjust' | 'cutout' | 'spotlight';
 
 const TAB_LABELS: Record<Tab, string> = {
   text: 'Text',
@@ -27,14 +28,16 @@ const TAB_LABELS: Record<Tab, string> = {
   speed: 'Speed',
   animation: 'Animation',
   adjust: 'Adjust',
+  cutout: 'Cutout',
+  spotlight: 'Spotlight',
 };
 
 function tabsFor(c: Clip): Tab[] {
   switch (c.kind) {
     case 'video':
-      return ['basic', 'audio', 'speed', 'animation', 'adjust'];
+      return ['basic', 'spotlight', 'speed', 'audio', 'animation', 'adjust', 'cutout'];
     case 'image':
-      return ['basic', 'animation', 'adjust'];
+      return ['basic', 'animation', 'adjust', 'cutout'];
     case 'audio':
       return ['audio', 'speed'];
     case 'text':
@@ -65,6 +68,7 @@ export function Inspector() {
           {formatTimecode(clip.start)} &middot; {clip.duration.toFixed(2)}s
         </small>
       </header>
+      <QuickActions clip={clip} />
       <nav className="insp-tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t} role="tab" aria-selected={active === t} className={active === t ? 'on' : ''} onClick={() => setTab(t)}>
@@ -79,6 +83,8 @@ export function Inspector() {
         {active === 'speed' && <SpeedPanel clip={clip} />}
         {active === 'animation' && <AnimationPanel clip={clip} />}
         {active === 'adjust' && <AdjustPanel clip={clip} />}
+        {active === 'cutout' && <CutoutPanel clip={clip} />}
+        {active === 'spotlight' && <SpotlightPanel clip={clip} />}
       </div>
     </aside>
   );
@@ -88,24 +94,33 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const secs = (v: number) => `${v.toFixed(1)}s`;
 
 function BasicPanel({ clip }: { clip: Clip }) {
-  const tr = clip.transform;
-  const setTr = (patch: Partial<Clip['transform']>) => updateSelected((c) => ({ transform: { ...c.transform, ...patch } }));
+  const reset = () =>
+    updateSelected((c) => ({
+      transform: { ...c.transform, x: 0, y: 0, scale: 1, rotation: 0 },
+      keyframes: c.keyframes?.volume ? { volume: c.keyframes.volume } : undefined,
+    }));
+  const pos = (v: number) => (v * 100).toFixed(1);
   return (
     <>
       <Section
         title="Transform"
         action={
-          <button className="link-btn" onClick={() => setTr({ x: 0, y: 0, scale: 1, rotation: 0 })}>
-            Reset
-          </button>
+          <span className="row-btns">
+            <KeyframeNav clip={clip} />
+            <button className="link-btn" onClick={reset}>
+              Reset
+            </button>
+          </span>
         }
       >
-        <Slider label="Scale" value={tr.scale} min={0.05} max={5} step={0.01} format={pct} defaultValue={1} onChange={(scale) => setTr({ scale })} />
-        <Slider label="Position X" value={tr.x} min={-1} max={1} step={0.001} format={(v) => (v * 100).toFixed(1)} defaultValue={0} onChange={(x) => setTr({ x })} />
-        <Slider label="Position Y" value={tr.y} min={-1} max={1} step={0.001} format={(v) => (v * 100).toFixed(1)} defaultValue={0} onChange={(y) => setTr({ y })} />
-        <Slider label="Rotation" value={tr.rotation} min={-180} max={180} step={0.5} format={(v) => `${v}°`} defaultValue={0} onChange={(rotation) => setTr({ rotation })} />
-        <Slider label="Opacity" value={tr.opacity} min={0} max={1} step={0.01} format={pct} defaultValue={1} onChange={(opacity) => setTr({ opacity })} />
+        <p className="hint subtle">Tap ◆ to keyframe a value at the playhead; change it elsewhere to animate.</p>
+        <KeySlider clip={clip} prop="scale" label="Scale" min={0.05} max={5} step={0.01} format={pct} defaultValue={1} />
+        <KeySlider clip={clip} prop="x" label="Position X" min={-1} max={1} step={0.001} format={pos} defaultValue={0} />
+        <KeySlider clip={clip} prop="y" label="Position Y" min={-1} max={1} step={0.001} format={pos} defaultValue={0} />
+        <KeySlider clip={clip} prop="rotation" label="Rotation" min={-180} max={180} step={0.5} format={(v) => `${v.toFixed(1)}°`} defaultValue={0} />
+        <KeySlider clip={clip} prop="opacity" label="Opacity" min={0} max={1} step={0.01} format={pct} defaultValue={1} />
       </Section>
+      {(clip.kind === 'video' || clip.kind === 'image') && <CropSection clip={clip} />}
       {(clip.kind === 'video' || clip.kind === 'image') && (
         <Section title="Canvas fit">
           <Segmented
@@ -152,10 +167,10 @@ function TextPanel({ clip }: { clip: Clip }) {
         </select>
         <Slider label="Size" value={t.fontSize} min={16} max={320} defaultValue={96} onChange={(fontSize) => set({ fontSize })} />
         <div className="row-btns">
-          <button className={`chip-btn ${t.bold ? 'on' : ''}`} onClick={() => set({ bold: !t.bold })} title="Bold">
+          <button className={`chip-btn square ${t.bold ? 'on' : ''}`} onClick={() => set({ bold: !t.bold })} title="Bold">
             <b>B</b>
           </button>
-          <button className={`chip-btn ${t.italic ? 'on' : ''}`} onClick={() => set({ italic: !t.italic })} title="Italic">
+          <button className={`chip-btn square ${t.italic ? 'on' : ''}`} onClick={() => set({ italic: !t.italic })} title="Italic">
             <i>I</i>
           </button>
           <Segmented
@@ -188,7 +203,7 @@ function AudioPanel({ clip }: { clip: Clip }) {
     <>
       {silent && <p className="muted small">This clip has no audio track.</p>}
       <Section title="Volume">
-        <Slider label="Volume" value={clip.volume} min={0} max={2} step={0.01} format={pct} defaultValue={1} onChange={(volume) => updateSelected({ volume })} />
+        <KeySlider clip={clip} prop="volume" label="Volume" min={0} max={2} step={0.01} format={pct} defaultValue={1} />
         <Toggle label="Mute clip" checked={clip.volume === 0} onChange={(m) => updateSelected({ volume: m ? 0 : 1 })} />
       </Section>
       <Section title="Fades">
@@ -202,6 +217,7 @@ function AudioPanel({ clip }: { clip: Clip }) {
 function SpeedPanel({ clip }: { clip: Clip }) {
   const setSpeed = (speed: number, history = true) => edit((p) => setClipSpeed(p, clip.id, speed), history);
   return (
+    <>
     <Section title="Speed">
       <div className="speed-grid">
         {SPEED_PRESETS.map((s) => (
@@ -224,6 +240,8 @@ function SpeedPanel({ clip }: { clip: Clip }) {
         Duration {clip.duration.toFixed(2)}s. Later clips on this track shift to make room.
       </p>
     </Section>
+    {clip.kind === 'video' && <CurveSection clip={clip} />}
+    </>
   );
 }
 

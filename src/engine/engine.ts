@@ -1,4 +1,5 @@
 import { activeLayers, projectDuration, upcomingClips } from '../model/ops';
+import { clipGain, rateAt } from '../model/timing';
 import type { Asset, Clip } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
@@ -195,6 +196,29 @@ class Engine {
     return null;
   };
 
+  /**
+   * Colour of the selected clip's source at fractional position (fx, fy) of its displayed (cropped) frame,
+   * read from the unprocessed media so an active key doesn't hide the colour being picked.
+   */
+  sampleColor(clip: Clip, fx: number, fy: number): string | null {
+    const src = this.getSource(clip);
+    if (!src) return null;
+    const [iw, ih] = src instanceof HTMLVideoElement ? [src.videoWidth, src.videoHeight] : src instanceof HTMLImageElement ? [src.naturalWidth, src.naturalHeight] : [src.width, src.height];
+    if (!iw || !ih) return null;
+    const c = clip.crop ?? { left: 0, top: 0, right: 0, bottom: 0 };
+    const x = clip.flipH ? 1 - fx : fx;
+    const y = clip.flipV ? 1 - fy : fy;
+    const sx = Math.floor((c.left + x * (1 - c.left - c.right)) * iw);
+    const sy = Math.floor((c.top + y * (1 - c.top - c.bottom)) * ih);
+    const probe = document.createElement('canvas');
+    probe.width = probe.height = 1;
+    const ctx = probe.getContext('2d', { willReadFrequently: true })!;
+    // Average a small patch to avoid picking a noisy pixel.
+    ctx.drawImage(src, Math.max(0, sx - 3), Math.max(0, sy - 3), 7, 7, 0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
   /** Bring every media element in line with the timeline at time `t`. */
   private sync(t: number, playing: boolean) {
     const { project, assets } = useEditor.getState();
@@ -210,15 +234,18 @@ class Engine {
       const entry = this.mediaFor(clip, asset);
       live.add(clip.id);
       const el = entry.el;
-      const target = clamp(layer.sourceTime, 0, Math.max(0, asset.duration - 0.01));
-      const running = playing && !layer.held;
+      const end = Math.max(0, asset.duration - 0.01);
+      const target = clamp(layer.sourceTime, 0, end);
+      // Outgoing transition clips keep playing into their handles; holds and exhausted media freeze.
+      const rawRate = rateAt(clip, layer.local);
+      const running = playing && rawRate > 0 && layer.sourceTime < end;
       if (running) {
-        const rate = clamp(clip.speed, 0.0625, 16);
-        if (el.playbackRate !== rate) el.playbackRate = rate;
+        const rate = clamp(rawRate, 0.0625, 16);
+        if (Math.abs(el.playbackRate - rate) > 0.01) el.playbackRate = rate;
         if (el.paused) {
           if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target;
           void el.play().catch(() => {});
-        } else if (Math.abs(el.currentTime - target) > 0.25 * Math.max(1, clip.speed)) {
+        } else if (Math.abs(el.currentTime - target) > 0.25 * Math.max(1, rate)) {
           el.currentTime = target;
         }
       } else {
@@ -226,12 +253,9 @@ class Engine {
         if (!el.seeking && Math.abs(el.currentTime - target) > 0.5 / fps) el.currentTime = target;
       }
 
-      let gain = running && !track.muted ? clip.volume : 0;
-      if (gain > 0) {
-        if (clip.audioFadeIn > 0 && layer.local < clip.audioFadeIn) gain *= layer.local / clip.audioFadeIn;
-        const remaining = clip.duration - layer.local;
-        if (clip.audioFadeOut > 0 && remaining < clip.audioFadeOut) gain *= Math.max(0, remaining / clip.audioFadeOut);
-      }
+      let gain = running && !track.muted ? clipGain(clip, Math.min(layer.local, clip.duration)) : 0;
+      // Crossfade the sound under a transition.
+      if (layer.transition) gain *= layer.transition.role === 'out' ? 1 - layer.transition.progress : layer.transition.progress;
       this.setGain(entry, gain);
     }
 

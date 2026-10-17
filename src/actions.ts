@@ -14,7 +14,20 @@ import {
   splitClip,
   trackClips,
 } from './model/ops';
-import type { Asset, Clip, Project, TextStyle, TransitionKind } from './model/types';
+import {
+  addMarker,
+  copyStyle,
+  detachAudio,
+  insertRipple,
+  pasteStyle,
+  removeMarker,
+  replaceMedia,
+  setCurve,
+  setHold,
+  type ClipStyle,
+} from './model/ops';
+import { CURVE_PRESETS, removeKeyframe, setKeyframe, valueAt, hasKeyframeAt } from './model/timing';
+import type { Asset, Clip, KeyProp, Project, Spotlight, TextStyle, TransitionKind } from './model/types';
 import { addAsset, commit, edit, openProject, patchAsset, select, selectedClip, toast, useEditor } from './store';
 
 const get = useEditor.getState;
@@ -276,4 +289,227 @@ export function startAutosave() {
 
 export function renameProject(name: string) {
   edit((p) => ({ ...p, name: name.trim() || p.name }));
+}
+
+
+// ---------- long jobs ----------
+
+async function runTask<T>(label: string, job: (report: (p: number | null) => void, signal: AbortSignal) => Promise<T>): Promise<T | null> {
+  if (get().task) {
+    toast('Another task is still running');
+    return null;
+  }
+  const ac = new AbortController();
+  useEditor.setState({ task: { label, progress: null, cancel: () => ac.abort() } });
+  try {
+    return await job((progress) => useEditor.setState((s) => (s.task ? { task: { ...s.task, progress } } : {})), ac.signal);
+  } catch (err) {
+    if ((err as Error).name !== 'AbortError') {
+      console.error(err);
+      toast(`${label} failed: ${(err as Error).message}`);
+    }
+    return null;
+  } finally {
+    useEditor.setState({ task: null });
+  }
+}
+
+async function importBlob(blob: Blob, name: string): Promise<Asset | null> {
+  const file = new File([blob], name, { type: blob.type });
+  const [asset] = await importFiles([file]);
+  return asset ?? null;
+}
+
+const baseName = (name: string) => name.replace(/\.[^.]+$/, '');
+
+// ---------- quick edits ----------
+
+export function detachAudioSelected() {
+  const sel = selectedClip(get());
+  if (!sel || sel.kind !== 'video') return;
+  const asset = sel.assetId ? get().assets[sel.assetId] : undefined;
+  if (asset && asset.waveform && !asset.hasAudio) {
+    toast('This clip has no audio');
+    return;
+  }
+  edit((p) => detachAudio(p, sel.id));
+  toast('Audio detached to its own track');
+}
+
+/** Inserts a 3-second still of the current frame at the playhead, pushing the rest along. */
+export async function freezeFrameSelected() {
+  const s = get();
+  const sel = selectedClip(s);
+  if (!sel || sel.kind !== 'video' || !sel.assetId) {
+    toast('Select a video clip to freeze a frame');
+    return;
+  }
+  const t = s.currentTime;
+  if (t < sel.start || t > clipEnd(sel)) {
+    toast('Move the playhead over the clip first');
+    return;
+  }
+  const asset = s.assets[sel.assetId];
+  await runTask('Freezing frame', async () => {
+    const { captureFrame } = await import('./engine/frames');
+    const { sourceTimeAt } = await import('./model/timing');
+    const png = await captureFrame(asset, Math.min(sourceTimeAt(sel, t), asset.duration - 0.01));
+    const still = await importBlob(png, `${baseName(asset.name)} freeze.png`);
+    if (!still) return;
+    const clip = { ...createMediaClip(still), duration: 3, transform: { ...sel.transform }, fit: sel.fit, filter: sel.filter, adjust: { ...sel.adjust }, crop: sel.crop, flipH: sel.flipH, flipV: sel.flipV };
+    edit((p) => insertRipple(p, sel.trackId, t, clip));
+    select(clip.id);
+  });
+}
+
+/** Replaces the clip's footage with a reversed copy of the section it uses. */
+export async function reverseSelected() {
+  const sel = selectedClip(get());
+  if (!sel || sel.kind !== 'video' || !sel.assetId) {
+    toast('Select a video clip to reverse');
+    return;
+  }
+  const asset = get().assets[sel.assetId];
+  const { sourceSpan } = await import('./model/timing');
+  const from = sel.inPoint;
+  const to = Math.min(asset.duration, sel.inPoint + sourceSpan(sel));
+  if (to - from > 180) {
+    toast('Reverse works on up to 3 minutes of footage; trim the clip first');
+    return;
+  }
+  await runTask('Reversing clip', async (report, signal) => {
+    const { reverseVideo } = await import('./engine/frames');
+    const blob = await reverseVideo(asset, from, to, { onProgress: report, signal });
+    const reversed = await importBlob(blob, `${baseName(asset.name)} reversed.mp4`);
+    if (!reversed) return;
+    edit((p) => updateClipById(replaceMedia(p, sel.id, reversed), sel.id, { inPoint: 0, duration: sel.duration }));
+    toast('Clip reversed');
+  });
+}
+
+function updateClipById(p: Project, id: string, patch: Partial<Clip>): Project {
+  return { ...p, clips: p.clips.map((c) => (c.id === id ? { ...c, ...patch } : c)) };
+}
+
+export function replaceSelectedWith(assetId: string) {
+  const sel = selectedClip(get());
+  const asset = get().assets[assetId];
+  if (!sel || !asset) return;
+  const before = get().project;
+  edit((p) => replaceMedia(p, sel.id, asset));
+  if (get().project === before) toast("That media can't replace this clip");
+  else toast('Clip replaced');
+}
+
+/** AI cutout for photo clips: swaps in a copy with the background removed. */
+export async function removeBackgroundSelected() {
+  const sel = selectedClip(get());
+  if (!sel || sel.kind !== 'image' || !sel.assetId) {
+    toast('Select a photo (or freeze frame) to remove its background');
+    return;
+  }
+  const asset = get().assets[sel.assetId];
+  await runTask('Removing background', async (report) => {
+    const { removeBackground } = await import('./ai/cutout');
+    const src = await (await fetch(asset.url)).blob();
+    const png = await removeBackground(src, (l, t) => report(t ? (l / t) * 0.9 : null));
+    const cut = await importBlob(png, `${baseName(asset.name)} cutout.png`);
+    if (!cut) return;
+    edit((p) => replaceMedia(p, sel.id, cut));
+    toast('Background removed');
+  });
+}
+
+let clipboardStyle: ClipStyle | null = null;
+
+export function copySelectedStyle() {
+  const sel = selectedClip(get());
+  if (!sel) return;
+  clipboardStyle = copyStyle(sel);
+  toast('Style copied');
+}
+
+export function pasteSelectedStyle() {
+  const sel = selectedClip(get());
+  if (!sel || !clipboardStyle) {
+    toast(clipboardStyle ? 'Select a clip to paste onto' : 'Copy a style first');
+    return;
+  }
+  const style = clipboardStyle;
+  edit((p) => pasteStyle(p, sel.id, style));
+  toast('Style pasted');
+}
+
+export const hasCopiedStyle = () => !!clipboardStyle;
+
+// ---------- markers ----------
+
+export function addMarkerAtPlayhead(label = '') {
+  edit((p) => addMarker(p, get().currentTime, label));
+}
+
+export function deleteMarker(id: string) {
+  edit((p) => removeMarker(p, id));
+}
+
+// ---------- keyframes ----------
+
+/** Clip-local playhead time, clamped into the clip. */
+export function localPlayhead(clip: Clip): number {
+  return Math.min(clip.duration, Math.max(0, get().currentTime - clip.start));
+}
+
+export function toggleKeyframe(prop: KeyProp) {
+  const sel = selectedClip(get());
+  if (!sel) return;
+  const local = localPlayhead(sel);
+  if (hasKeyframeAt(sel, prop, local)) {
+    updateSelected((c) => ({ keyframes: removeKeyframe(c, prop, local) }));
+  } else {
+    updateSelected((c) => ({ keyframes: setKeyframe(c, prop, local, valueAt(c, prop, local)) }));
+  }
+}
+
+/** Sets an animatable value: on a keyframed property this keys the playhead, otherwise it edits the base value. */
+export function setAnimatable(prop: KeyProp, v: number, history = true) {
+  updateSelected((c) => {
+    if (c.keyframes?.[prop]?.length) return { keyframes: setKeyframe(c, prop, localPlayhead(c), v) };
+    if (prop === 'volume') return { volume: v };
+    return { transform: { ...c.transform, [prop]: v } };
+  }, history);
+}
+
+// ---------- speed curve and spotlight ----------
+
+export function setCurveSelected(presetId: string | null) {
+  const sel = selectedClip(get());
+  if (!sel) return;
+  const preset = presetId ? CURVE_PRESETS.find((c) => c.id === presetId) : null;
+  const asset = sel.assetId ? get().assets[sel.assetId] : undefined;
+  edit((p) => setCurve(p, sel.id, preset ? { id: preset.id, points: preset.points.map((x) => ({ ...x })) } : undefined, asset));
+}
+
+export const DEFAULT_SPOTLIGHT: Spotlight = { x: 0.5, y: 0.5, r: 0.12, color: '#ffd400', label: '', zoom: true };
+
+export function setSpotlightSelected(on: boolean, hold = 1.5) {
+  const sel = selectedClip(get());
+  if (!sel || sel.kind !== 'video') return;
+  if (on) {
+    edit((p) => updateClipById(setHold(p, sel.id, sel.hold || hold), sel.id, { spotlight: sel.spotlight ?? { ...DEFAULT_SPOTLIGHT } }));
+    useEditor.setState({ pick: 'spotlight' });
+    engineSeek(sel.start + 0.05);
+  } else {
+    edit((p) => updateClipById(setHold(p, sel.id, 0), sel.id, { spotlight: undefined }));
+  }
+}
+
+export function setSpotlightHold(hold: number) {
+  const sel = selectedClip(get());
+  if (!sel) return;
+  edit((p) => setHold(p, sel.id, hold));
+}
+
+function engineSeek(t: number) {
+  engine.pause();
+  engine.seek(t);
 }

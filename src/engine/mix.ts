@@ -1,6 +1,6 @@
 import { projectDuration } from '../model/ops';
 import type { Asset, Project } from '../model/types';
-import { planAudio } from './exportPlan';
+import { AUTOMATION_RATE, planAudio } from './exportPlan';
 
 /** Renders the whole audio mix offline, much faster than real time. Returns null when nothing is audible. */
 export async function mixAudio(
@@ -29,18 +29,14 @@ export async function mixAudio(
 
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    src.playbackRate.value = cue.rate;
+    const curveDur = (cue.gain.length - 1) / AUTOMATION_RATE;
+    if (typeof cue.rate === 'number') src.playbackRate.value = cue.rate;
+    else src.playbackRate.setValueCurveAtTime(Float32Array.from(cue.rate), cue.when, curveDur);
     const gain = ctx.createGain();
-    const g = gain.gain;
-    const end = cue.when + cue.duration;
-    g.setValueAtTime(cue.fadeIn > 0 ? 0 : cue.volume, cue.when);
-    if (cue.fadeIn > 0) g.linearRampToValueAtTime(cue.volume, cue.when + cue.fadeIn);
-    if (cue.fadeOut > 0) {
-      g.setValueAtTime(cue.volume, Math.max(cue.when + cue.fadeIn, end - cue.fadeOut));
-      g.linearRampToValueAtTime(0, end);
-    }
+    gain.gain.setValueCurveAtTime(Float32Array.from(cue.gain), cue.when, curveDur);
     src.connect(gain).connect(ctx.destination);
-    src.start(cue.when, cue.offset, Math.min(cue.sourceDuration, buffer.duration - cue.offset));
+    src.start(cue.when, cue.offset);
+    src.stop(cue.when + cue.duration);
     scheduled++;
   }
   if (!scheduled) return null;

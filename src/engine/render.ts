@@ -1,5 +1,7 @@
 import { activeWordIndex } from '../captions/captions';
 import { activeLayers, type Layer } from '../model/ops';
+import { transformAt } from '../model/timing';
+import { applyChroma } from './chroma';
 import { FILTERS } from '../model/presets';
 import type { AnimKind, Clip, Project, TransitionKind } from '../model/types';
 import { easeInOutCubic, easeOutBack, easeOutCubic } from '../utils';
@@ -189,15 +191,16 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
     const { clip, track } = layer;
     if (track.hidden || track.kind === 'audio' || clip.kind === 'audio') continue;
     const m = motionFor(layer);
-    const alpha = clip.transform.opacity * m.alpha;
+    const tr = transformAt(clip, layer.local);
+    const alpha = tr.opacity * m.alpha;
     if (alpha <= 0.001) continue;
 
     let w = 0;
     let h = 0;
-    const scale = clip.transform.scale * m.scale;
-    const cx = W / 2 + (clip.transform.x + m.dx) * W;
-    const cy = H / 2 + (clip.transform.y + m.dy) * H;
-    const rotation = clip.transform.rotation + m.rot;
+    const scale = tr.scale * m.scale;
+    const cx = W / 2 + (tr.x + m.dx) * W;
+    const cy = H / 2 + (tr.y + m.dy) * H;
+    const rotation = tr.rotation + m.rot;
 
     ctx.save();
     if (m.wipe !== null) {
@@ -210,15 +213,41 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
     ctx.rotate((rotation * Math.PI) / 180);
 
     if (clip.kind === 'video' || clip.kind === 'image') {
-      const el = opts.getSource(clip);
-      const [iw, ih] = el ? sourceSize(el) : [0, 0];
-      if (el && iw > 0 && ih > 0) {
+      let el: Source | null = opts.getSource(clip);
+      const [fw, fh] = el ? sourceSize(el) : [0, 0];
+      if (el && fw > 0 && fh > 0) {
+        if (clip.chroma) el = applyChroma(el, fw, fh, clip.chroma) ?? el;
+        const [ew, eh] = sourceSize(el);
+        const c = clip.crop;
+        const sx = c ? c.left * ew : 0;
+        const sy = c ? c.top * eh : 0;
+        const sw = c ? Math.max(1, ew * (1 - c.left - c.right)) : ew;
+        const sh = c ? Math.max(1, eh * (1 - c.top - c.bottom)) : eh;
+        // Fit uses the cropped frame in source pixels, so keying at a reduced size doesn't change layout.
+        const iw = fw * (sw / ew);
+        const ih = fh * (sh / eh);
         const fit = clip.fit === 'cover' ? Math.max(W / iw, H / ih) : Math.min(W / iw, H / ih);
         w = iw * fit * scale;
         h = ih * fit * scale;
+        const spot = clip.spotlight && clip.hold ? spotlightState(clip, layer.local) : null;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-w / 2, -h / 2, w, h);
+        ctx.clip();
+        if (spot && spot.zoom > 1) {
+          const px = -w / 2 + clip.spotlight!.x * w;
+          const py = -h / 2 + clip.spotlight!.y * h;
+          ctx.translate(px, py);
+          ctx.scale(spot.zoom, spot.zoom);
+          ctx.translate(-px, -py);
+        }
+        if (clip.flipH || clip.flipV) ctx.scale(clip.flipH ? -1 : 1, clip.flipV ? -1 : 1);
         ctx.filter = cssFilterFor(clip, m.blur, pxScale);
-        ctx.drawImage(el, -w / 2, -h / 2, w, h);
+        ctx.drawImage(el, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
         ctx.filter = 'none';
+        if (clip.flipH || clip.flipV) ctx.scale(clip.flipH ? -1 : 1, clip.flipV ? -1 : 1);
+        if (spot) drawSpotlight(ctx, clip, spot, w, h, Math.min(W, H));
+        ctx.restore();
         if (clip.adjust.vignette > 0) {
           const r = Math.hypot(w, h) / 2;
           const g = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r);
@@ -229,7 +258,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         }
       }
     } else if (clip.kind === 'text' && clip.text) {
-      [w, h] = drawText(ctx, clip, Math.min(W, H), scale, m.blur * pxScale, clip.inPoint + layer.local * clip.speed);
+      [w, h] = drawText(ctx, clip, Math.min(W, H), scale, m.blur * pxScale, layer.sourceTime);
     } else if (clip.kind === 'sticker' && clip.sticker) {
       const size = (220 * Math.min(W, H)) / 1080;
       ctx.scale(scale, scale);
@@ -246,6 +275,91 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
   }
   ctx.restore();
   return boxes;
+}
+
+interface SpotState {
+  /** 0..1 strength of the dimmed surround and ring. */
+  amount: number;
+  zoom: number;
+  /** Ring pop-in progress 0..1. */
+  ring: number;
+  /** Seconds into the hold, for the pulse. */
+  t: number;
+}
+
+/** Spotlight runs during the clip's hold and fades out over the following quarter second. */
+function spotlightState(clip: Clip, local: number): SpotState | null {
+  const hold = clip.hold ?? 0;
+  const fadeOut = 0.3;
+  if (local > hold + fadeOut) return null;
+  const amount = local <= hold ? 1 : 1 - (local - hold) / fadeOut;
+  const zoomIn = Math.min(1, local / Math.max(0.3, hold * 0.5));
+  const zoomTarget = clip.spotlight!.zoom ? 1.5 : 1;
+  const zoom = 1 + (zoomTarget - 1) * easeInOutCubic(zoomIn) * amount;
+  return { amount, zoom, ring: Math.min(1, local / 0.35), t: local };
+}
+
+function drawSpotlight(ctx: CanvasRenderingContext2D, clip: Clip, s: SpotState, w: number, h: number, shortSide: number) {
+  const sp = clip.spotlight!;
+  const px = -w / 2 + sp.x * w;
+  const py = -h / 2 + sp.y * h;
+  // The frame is already zoomed around the player, so draw the ring in unzoomed space.
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.scale(1 / s.zoom, 1 / s.zoom);
+  ctx.translate(-px, -py);
+  const pulse = 1 + 0.04 * Math.sin(s.t * 6);
+  const r = sp.r * h * s.zoom * easeOutBack(s.ring) * pulse;
+  ctx.globalAlpha *= s.amount;
+  // Dim everything outside the ring.
+  ctx.beginPath();
+  ctx.rect(-w / 2 - w, -h / 2 - h, w * 3, h * 3);
+  ctx.arc(px, py, Math.max(1, r), 0, Math.PI * 2, true);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fill('evenodd');
+  // Ring.
+  const lw = Math.max(3, shortSide * 0.008);
+  ctx.beginPath();
+  ctx.arc(px, py, Math.max(1, r), 0, Math.PI * 2);
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = sp.color;
+  ctx.shadowColor = sp.color;
+  ctx.shadowBlur = lw * 3;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  // Pointer arrow and label above the ring.
+  if (s.ring > 0.6) {
+    const top = py - r - lw * 2;
+    const size = shortSide * 0.035;
+    ctx.fillStyle = sp.color;
+    ctx.beginPath();
+    ctx.moveTo(px, top);
+    ctx.lineTo(px - size * 0.6, top - size);
+    ctx.lineTo(px + size * 0.6, top - size);
+    ctx.closePath();
+    ctx.fill();
+    if (sp.label) {
+      ctx.font = `800 ${size * 1.1}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(sp.label).width + size * 1.2;
+      const ly = top - size * 2.1;
+      ctx.beginPath();
+      ctx.roundRect(px - tw / 2, ly - size * 0.85, tw, size * 1.7, size * 0.85);
+      ctx.fill();
+      ctx.fillStyle = contrastInk(sp.color);
+      ctx.fillText(sp.label, px, ly + size * 0.05);
+    }
+  }
+  ctx.restore();
+}
+
+/** Black or white, whichever reads better on `hex`. */
+export function contrastInk(hex: string): string {
+  const m = hex.replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  if (!m) return '#111';
+  const [r, g, b] = [m[1], m[2], m[3]].map((x) => parseInt(x, 16));
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#111' : '#fff';
 }
 
 function drawText(

@@ -23,6 +23,10 @@ export interface EditorState {
   gestureBase: Project | null;
   importing: number;
   toast: { id: number; text: string } | null;
+  /** A long-running job (reverse, cutout...) shown as a progress pill; progress null is indeterminate. */
+  task: { label: string; progress: number | null; cancel?: () => void } | null;
+  /** Preview click mode: sample a key colour or place a spotlight on the selected clip. */
+  pick: 'chroma' | 'spotlight' | null;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -40,6 +44,8 @@ export const useEditor = create<EditorState>(() => ({
   gestureBase: null,
   importing: 0,
   toast: null,
+  task: null,
+  pick: null,
 }));
 
 const get = useEditor.getState;

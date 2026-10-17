@@ -1,5 +1,8 @@
 import { uid } from '../utils';
-import type { Asset, Clip, ClipKind, Project, Track, TrackKind, TransitionKind } from './types';
+import { durationForSpan, sliceKeyframes, sourceSpan, sourceTimeAt } from './timing';
+import type { Asset, Clip, ClipKind, Marker, Project, SpeedCurve, Track, TrackKind, TransitionKind } from './types';
+
+export { sourceTimeAt } from './timing';
 
 /** Shortest clip the timeline allows, in seconds. */
 export const MIN_CLIP = 0.1;
@@ -37,11 +40,7 @@ export function isFree(p: Project, trackId: string, start: number, duration: num
 /** Longest timeline duration the clip can have from its current in-point. */
 export function maxTimelineDuration(clip: Clip, asset?: Asset): number {
   if (!asset || asset.kind === 'image' || clip.kind === 'image') return Infinity;
-  return Math.max(MIN_CLIP, (asset.duration - clip.inPoint) / clip.speed);
-}
-
-export function sourceTimeAt(clip: Clip, t: number): number {
-  return clip.inPoint + (t - clip.start) * clip.speed;
+  return Math.max(MIN_CLIP, durationForSpan(clip, asset.duration - clip.inPoint));
 }
 
 export function createTrack(kind: TrackKind, main = false): Track {
@@ -162,18 +161,33 @@ export function splitClip(p: Project, id: string, t: number, newId = uid('c_')):
   const c = p.clips.find((x) => x.id === id);
   if (!c) return null;
   if (t <= c.start + MIN_CLIP / 2 || t >= clipEnd(c) - MIN_CLIP / 2) return null;
+  const hold = c.hold ?? 0;
+  // A spotlight hold is one piece; split after it.
+  if (hold > 0 && t <= c.start + hold + MIN_CLIP / 2) return null;
   const leftDur = t - c.start;
-  const left: Clip = { ...c, duration: leftDur, animOut: 'none', audioFadeOut: 0 };
-  const right: Clip = {
+  const rightDur = c.duration - leftDur;
+  const splitSource = sourceTimeAt(c, t);
+  let left: Clip = { ...c, duration: leftDur, animOut: 'none', audioFadeOut: 0, keyframes: sliceKeyframes(c, 0, leftDur) };
+  let right: Clip = {
     ...c,
     id: newId,
     start: t,
-    duration: c.duration - leftDur,
-    inPoint: c.inPoint + leftDur * c.speed,
+    duration: rightDur,
+    inPoint: splitSource,
     animIn: 'none',
     audioFadeIn: 0,
     transition: 'none',
+    hold: undefined,
+    spotlight: undefined,
+    keyframes: sliceKeyframes(c, leftDur, rightDur),
   };
+  if (c.curve) {
+    // Each half keeps its own source range at the average speed it had under the curve.
+    const leftSpan = splitSource - c.inPoint;
+    const rightSpan = sourceSpan(c) - leftSpan;
+    left = { ...left, curve: undefined, speed: Math.max(0.05, leftSpan / Math.max(1e-6, leftDur - hold)) };
+    right = { ...right, curve: undefined, speed: Math.max(0.05, rightSpan / Math.max(1e-6, rightDur)) };
+  }
   const idx = p.clips.findIndex((x) => x.id === id);
   const clips = [...p.clips];
   clips.splice(idx, 1, left, right);
@@ -205,10 +219,18 @@ export function trimClip(p: Project, id: string, edge: 'start' | 'end', time: nu
     let min = prev ? clipEnd(prev) : 0;
     if (asset && asset.kind !== 'image') min = Math.max(min, c.start - c.inPoint / c.speed);
     const s = Math.min(Math.max(time, min), end - MIN_CLIP);
+    const delta = s - c.start;
+    const hold = c.hold ?? 0;
+    // Trimming into a hold shortens the hold; past it, the in-point follows the source.
+    const newHold = hold > 0 ? Math.max(0, hold - Math.max(0, delta)) : 0;
+    const inPoint = delta > 0 ? (delta <= hold ? c.inPoint : sourceTimeAt(c, s)) : c.inPoint + delta * c.speed;
     return updateClip(p, id, {
       start: s,
       duration: end - s,
-      inPoint: Math.max(0, c.inPoint + (s - c.start) * c.speed),
+      inPoint: Math.max(0, inPoint),
+      hold: newHold || undefined,
+      spotlight: newHold ? c.spotlight : undefined,
+      keyframes: sliceKeyframes(c, delta, end - s),
     });
   }
   let max = c.start + maxTimelineDuration(c, asset);
@@ -243,8 +265,8 @@ export function moveClip(p: Project, id: string, start: number, targetTrackId: s
 export function setClipSpeed(p: Project, id: string, speed: number): Project {
   const c = p.clips.find((x) => x.id === id);
   if (!c || speed <= 0) return p;
-  const sourceSpan = c.duration * c.speed;
-  const duration = Math.max(MIN_CLIP, sourceSpan / speed);
+  const span = sourceSpan(c);
+  const duration = Math.max(MIN_CLIP, durationForSpan({ ...c, speed }, span));
   const delta = duration - c.duration;
   const oldEnd = clipEnd(c);
   const clips = p.clips.map((x) => {
@@ -263,17 +285,155 @@ export function duplicateClip(p: Project, id: string, newId = uid('c_')): Projec
 }
 
 function structuredCloneClip(c: Clip): Clip {
-  return {
-    ...c,
-    transform: { ...c.transform },
-    adjust: { ...c.adjust },
-    text: c.text ? { ...c.text } : undefined,
+  return structuredClone(c);
+}
+
+// ---------- quick edits ----------
+
+/** Copies a video clip's sound onto its own audio track and mutes the original. */
+export function detachAudio(p: Project, id: string, newId = uid('c_')): Project | null {
+  const c = p.clips.find((x) => x.id === id);
+  if (!c || c.kind !== 'video') return null;
+  const audio: Clip = {
+    ...structuredCloneClip(c),
+    id: newId,
+    kind: 'audio',
+    name: `${c.name} (audio)`,
+    transition: 'none',
+    animIn: 'none',
+    animOut: 'none',
+    spotlight: undefined,
+    keyframes: c.keyframes?.volume ? { volume: c.keyframes.volume } : undefined,
   };
+  const muted = updateClip(p, id, (x) => ({
+    volume: 0,
+    keyframes: x.keyframes ? { ...x.keyframes, volume: undefined } : undefined,
+  }));
+  return placeClip(muted, audio);
+}
+
+/** Inserts `clip` at time `t` on the track of `atId`, splitting it and pushing later clips right. */
+export function insertRipple(p: Project, trackId: string, t: number, clip: Clip): Project {
+  let next = p;
+  const under = trackClips(p, trackId).find((c) => t > c.start + EPS && t < clipEnd(c) - EPS);
+  if (under) next = splitClip(next, under.id, t) ?? next;
+  const clips = next.clips.map((c) =>
+    c.trackId === trackId && c.start >= t - EPS ? { ...c, start: c.start + clip.duration } : c,
+  );
+  return { ...next, clips: [...clips, { ...clip, trackId, start: t }] };
+}
+
+/** Swaps a clip's media, keeping its position and edits. */
+export function replaceMedia(p: Project, id: string, asset: Asset): Project {
+  const c = p.clips.find((x) => x.id === id);
+  if (!c) return p;
+  const kind = asset.kind === 'image' ? 'image' : asset.kind === 'audio' ? 'audio' : 'video';
+  if (trackKindFor(kind) !== trackKindFor(c.kind)) return p;
+  const swapped: Clip = { ...c, kind, assetId: asset.id, name: asset.name, inPoint: 0, curve: c.curve };
+  if (kind !== 'image') {
+    const max = durationForSpan(swapped, asset.duration);
+    swapped.duration = Math.min(c.duration, Math.max(MIN_CLIP, max));
+  }
+  return updateClip(p, id, swapped);
+}
+
+export function setCurve(p: Project, id: string, curve: SpeedCurve | undefined, asset?: Asset): Project {
+  const c = p.clips.find((x) => x.id === id);
+  if (!c) return p;
+  const span = sourceSpan(c);
+  const next = { ...c, curve };
+  let duration = durationForSpan(next, span);
+  if (asset && asset.kind !== 'image') duration = Math.min(duration, durationForSpan(next, asset.duration - c.inPoint));
+  const delta = duration - c.duration;
+  const oldEnd = clipEnd(c);
+  return {
+    ...p,
+    clips: p.clips.map((x) => {
+      if (x.id === id) return { ...next, duration };
+      if (x.trackId === c.trackId && x.start >= oldEnd - EPS) return { ...x, start: Math.max(0, x.start + delta) };
+      return x;
+    }),
+  };
+}
+
+/** Adds (or removes) a spotlight hold at the start of a clip, rippling the track. */
+export function setHold(p: Project, id: string, hold: number): Project {
+  const c = p.clips.find((x) => x.id === id);
+  if (!c) return p;
+  const delta = hold - (c.hold ?? 0);
+  const oldEnd = clipEnd(c);
+  return {
+    ...p,
+    clips: p.clips.map((x) => {
+      if (x.id === id) return { ...x, hold: hold || undefined, duration: x.duration + delta };
+      if (x.trackId === c.trackId && x.start >= oldEnd - EPS) return { ...x, start: Math.max(0, x.start + delta) };
+      return x;
+    }),
+  };
+}
+
+// ---------- markers ----------
+
+export function addMarker(p: Project, t: number, label = '', color = '#ffd400'): Project {
+  if ((p.markers ?? []).some((m) => Math.abs(m.t - t) < 0.02)) return p;
+  const marker: Marker = { id: uid('m_'), t, label, color };
+  return { ...p, markers: [...(p.markers ?? []), marker].sort((a, b) => a.t - b.t) };
+}
+
+export function removeMarker(p: Project, id: string): Project {
+  return { ...p, markers: (p.markers ?? []).filter((m) => m.id !== id) };
+}
+
+// ---------- copy / paste attributes ----------
+
+export type ClipStyle = Pick<Clip, 'filter' | 'adjust' | 'animIn' | 'animInDur' | 'animOut' | 'animOutDur' | 'transform' | 'fit' | 'crop' | 'flipH' | 'flipV' | 'chroma'> & {
+  text?: Clip['text'];
+  volume?: number;
+};
+
+export function copyStyle(c: Clip): ClipStyle {
+  return structuredClone({
+    filter: c.filter,
+    adjust: c.adjust,
+    animIn: c.animIn,
+    animInDur: c.animInDur,
+    animOut: c.animOut,
+    animOutDur: c.animOutDur,
+    transform: c.transform,
+    fit: c.fit,
+    crop: c.crop,
+    flipH: c.flipH,
+    flipV: c.flipV,
+    chroma: c.chroma,
+    text: c.text,
+    volume: c.volume,
+  });
+}
+
+/** Applies copied attributes that make sense for the target (text style only to text, etc.). */
+export function pasteStyle(p: Project, id: string, style: ClipStyle): Project {
+  return updateClip(p, id, (c) => {
+    const patch: Partial<Clip> = {
+      animIn: style.animIn,
+      animInDur: style.animInDur,
+      animOut: style.animOut,
+      animOutDur: style.animOutDur,
+      transform: { ...style.transform },
+    };
+    if (c.kind === 'video' || c.kind === 'image') {
+      Object.assign(patch, { filter: style.filter, adjust: { ...style.adjust }, fit: style.fit, crop: style.crop, flipH: style.flipH, flipV: style.flipV, chroma: style.chroma });
+    }
+    if (c.kind === 'text' && c.text && style.text) {
+      patch.text = { ...style.text, content: c.text.content };
+    }
+    if ((c.kind === 'video' || c.kind === 'audio') && style.volume !== undefined) patch.volume = style.volume;
+    return patch;
+  });
 }
 
 /** Candidate positions for snapping, in timeline seconds. */
 export function snapPoints(p: Project, excludeId: string | null, playhead: number): number[] {
-  const pts = [0, playhead];
+  const pts = [0, playhead, ...(p.markers ?? []).map((m) => m.t)];
   for (const c of p.clips) {
     if (c.id === excludeId) continue;
     pts.push(c.start, clipEnd(c));
@@ -306,7 +466,7 @@ export interface Layer {
   sourceTime: number;
   /** Seconds since the clip started on the timeline. */
   local: number;
-  /** Set while a clip is drawn past its end as the outgoing side of a transition. */
+  /** Set while a clip plays past its end as the outgoing side of a transition. */
   held?: boolean;
   transition?: { kind: TransitionKind; progress: number; role: 'in' | 'out' };
 }
@@ -328,11 +488,13 @@ export function activeLayers(p: Project, t: number): Layer[] {
       const prev = clips[idx - 1];
       if (prev && Math.abs(clipEnd(prev) - clip.start) < 0.05) {
         const progress = Math.min(1, Math.max(0, local / clip.transitionDur));
+        // The outgoing clip keeps playing into its handle (source beyond its out-point);
+        // callers clamp to the media length, which freezes the last frame if there is none.
         layers.push({
           clip: prev,
           track,
-          sourceTime: prev.inPoint + Math.max(0, prev.duration * prev.speed - 0.05),
-          local: prev.duration,
+          sourceTime: sourceTimeAt(prev, t),
+          local: t - prev.start,
           held: true,
           transition: { kind: clip.transition, progress, role: 'out' },
         });

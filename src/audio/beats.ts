@@ -1,3 +1,4 @@
+import { decodeAudio } from '../engine/audioDecode';
 import { getMainTrack, MIN_CLIP, trackClips } from '../model/ops';
 import { durationForSpan } from '../model/timing';
 import type { Asset, Project } from '../model/types';
@@ -91,15 +92,9 @@ export function detectBeats(samples: Float32Array, sampleRate: number): { bpm: n
 
 /** Decodes an asset's audio and finds its beats. */
 export async function analyzeBeats(asset: Asset): Promise<{ bpm: number; beats: number[] }> {
-  const data = await (await fetch(asset.url)).arrayBuffer();
-  const ctx = new OfflineAudioContext(1, 1, 22050);
-  const buf = await ctx.decodeAudioData(data);
-  const mono = buf.getChannelData(0);
-  if (buf.numberOfChannels > 1) {
-    const r = buf.getChannelData(1);
-    for (let i = 0; i < mono.length; i++) mono[i] = (mono[i] + r[i]) / 2;
-  }
-  return detectBeats(mono, buf.sampleRate);
+  const audio = await decodeAudio(await (await fetch(asset.url)).blob(), { sampleRate: 22050, mono: true });
+  if (!audio) throw new Error(`${asset.name} has no audio.`);
+  return detectBeats(audio.channels[0], audio.sampleRate);
 }
 
 /**

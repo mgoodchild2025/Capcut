@@ -1,5 +1,6 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from 'mediabunny';
 import type { Asset, AssetKind } from '../model/types';
+import { decodeAudio } from './audioDecode';
 import { uid } from '../utils';
 
 /** Waveform peaks per second of source audio. */
@@ -260,24 +261,17 @@ export async function buildFilmstrip(asset: Asset): Promise<string[]> {
 
 /** Decode the audio track and reduce it to peaks. Returns null when there is no audio. */
 export async function buildWaveform(blob: Blob): Promise<number[] | null> {
-  if (blob.size > 600 * 1024 * 1024) return null;
-  const ctx = new OfflineAudioContext(1, 1, 44100);
-  let buffer: AudioBuffer;
-  try {
-    buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-  } catch {
-    return null;
-  }
-  const data = buffer.getChannelData(0);
-  const extra = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : null;
-  const bucket = Math.max(1, Math.floor(buffer.sampleRate / WAVEFORM_RATE));
+  const audio = await decodeAudio(blob, { sampleRate: 8000, mono: true, maxFallbackBytes: 300 * 1024 * 1024 }).catch(() => null);
+  if (!audio) return null;
+  const data = audio.channels[0];
+  const bucket = Math.max(1, Math.floor(audio.sampleRate / WAVEFORM_RATE));
   const peaks: number[] = [];
   let max = 0;
   for (let i = 0; i < data.length; i += bucket) {
     let peak = 0;
     const end = Math.min(data.length, i + bucket);
-    for (let j = i; j < end; j += 4) {
-      const v = Math.abs(extra ? (data[j] + extra[j]) / 2 : data[j]);
+    for (let j = i; j < end; j++) {
+      const v = Math.abs(data[j]);
       if (v > peak) peak = v;
     }
     peaks.push(peak);

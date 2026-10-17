@@ -12,6 +12,7 @@ import {
   Output,
 } from 'mediabunny';
 import type { Asset } from '../model/types';
+import { decodeAudio, toAudioBuffer } from './audioDecode';
 
 async function openVideo(asset: Asset) {
   const blob = await (await fetch(asset.url)).blob();
@@ -77,19 +78,13 @@ export async function reverseVideo(
     // Sound: decode, cut the range and flip it.
     let audio: AudioBuffer | null = null;
     try {
-      const ac = new OfflineAudioContext(2, 1, 48000);
-      const full = await ac.decodeAudioData(await blob.arrayBuffer());
-      const a = Math.floor(from * full.sampleRate);
-      const b = Math.min(full.length, Math.ceil(to * full.sampleRate));
-      if (b > a) {
-        audio = new AudioBuffer({ length: b - a, numberOfChannels: full.numberOfChannels, sampleRate: full.sampleRate });
-        for (let ch = 0; ch < full.numberOfChannels; ch++) {
-          const src = full.getChannelData(ch).subarray(a, b);
-          const dst = audio.getChannelData(ch);
-          for (let i = 0; i < src.length; i++) dst[i] = src[src.length - 1 - i];
-        }
+      const part = await decodeAudio(blob, { start: from, end: to, signal: opts.signal });
+      if (part) {
+        for (const ch of part.channels) ch.reverse();
+        audio = toAudioBuffer(part);
       }
-    } catch {
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e;
       audio = null;
     }
     let audioSource: AudioBufferSource | null = null;

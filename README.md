@@ -1,21 +1,22 @@
 # ClipForge
 
-A CapCut-style video editor that runs entirely in the browser, with a built-in workflow for volleyball highlight reels. Media never leaves your machine: files are decoded, composited and exported locally, and drafts are kept in IndexedDB.
+A CapCut-style video editor that runs entirely in the browser, with a built-in workflow for sports highlight reels (volleyball, basketball, soccer, football, baseball, softball, hockey and lacrosse). Media never leaves your machine: files are decoded, composited and exported locally, and drafts are kept in IndexedDB.
 
 **Live app:** https://mgoodchild2025.github.io/Capcut/ (published by `.github/workflows/deploy-pages.yml`)
 
-## Volleyball highlight reels
+## Sports highlight reels
 
 Every reel is built from a **broadcast graphics package** in your team colours, drawn as motion graphics frame by frame (the preview and the export draw the same frames):
 
 - **Title open**: logo slam with a shockwave, masked title reveal, kicker plate and light sweep. The starting lineup opens **versus**, with both logos.
-- **Player card**: the player's photo, a cut-out (background removed) with a rim glow, or a short clip in an angled window, with a giant number, stacked name and position plate.
+- **Player card**: the player's photo (a **living photo**: an on-device depth model splits it into layers and a virtual camera moves through them for 3D parallax), a cut-out (background removed) with a rim glow, or a short clip in an angled window, with a giant number, stacked name and position plate.
 - **Player ID lower third**: number block, name bar and the play (Kill, Ace...), built out in sequence.
-- **Score bug**: both teams' logos, scores and the set.
-- **Boards**: stats with count-up numbers, a roster wall of player tiles with photos, and a final scoreboard with every set.
+- **Score bug**: both teams' logos, scores and the set, quarter, half, inning or period.
+- **Boards**: stats with count-up numbers, a roster wall of player tiles with photos, and a final scoreboard with every set or period (sets won for volleyball, total points, goals or runs elsewhere).
 - **Stingers** in team colours cover section changes, and a **closer** with a logo lockup ends the reel.
+- **Four graphics looks**: **Broadcast** (bold TV package), **Championship** (brushed gold, spotlights and sparks), **Neon** (glow and a racing grid) and **Classic** (clean and understated). Switch every graphic at once from the graphic inspector.
 
-1. On the home screen, pick a template. You can also open the **Volleyball** tab in the editor.
+1. On the home screen, pick a sport, a look and a template. You can also open the **Sports** tab in the editor.
 
    | Template | Format | For |
    | --- | --- | --- |
@@ -28,7 +29,7 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 
 2. Enter the player or team details, pick team colours and add your **team and opponent logos** (remembered for next time). Player reels take a **photo or short clip** of the player; turn on **Cut out** to remove a photo's background. Optionally enter the **match score**: set scores add the final scoreboard, and a score per play shows the score bug.
 3. Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
-4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them (Kill, Ace, Block...) and credit them to players.
+4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them with the sport's plays (Kill, Three, Goal, Home run...) and credit them to players.
 5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them.
 6. Choose a music track and press **Build my reel**. Select any graphic in the editor to change its words and colours.
 
@@ -73,6 +74,7 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 | Beat detection | Onset envelope plus tempo and phase grid search. No download. |
 | Auto-follow reframing | Motion tracking on tiny frames, smoothed into a camera path. No download. |
 | Captions | Whisper base (Transformers.js, WebGPU or WASM). Downloads about 80 to 150 MB on first use. |
+| Living photos | Depth Anything V2 small (Transformers.js). Downloads about 25 MB on first use; falls back to an estimated depth map. |
 | Background removal | MODNet (Transformers.js). Downloads about 25 MB on first use. |
 | Text to speech | Supertonic or MMS-TTS (Transformers.js). Downloads a voice model on first use. |
 

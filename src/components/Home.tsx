@@ -112,7 +112,7 @@ export function Home() {
       <section className="templates">
         <div className="templates-head">
           <h2>
-            <Icon name="volleyball" /> Volleyball highlight reels
+            <Icon name="volleyball" /> Sports highlight reels
           </h2>
           <p>Drop in game footage. AI finds the best rallies, then we build the reel: titles, spotlights, music and all.</p>
         </div>

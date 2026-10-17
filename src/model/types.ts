@@ -12,6 +12,8 @@ export interface Asset {
   size: number;
   hasAudio: boolean;
   thumbnail?: string;
+  /** A working file (such as a depth map) kept out of the media library. */
+  internal?: boolean;
   /** Evenly spaced frames across the source, as data URLs. */
   filmstrip?: string[];
   /** Normalised peak values (0..1), WAVEFORM_RATE per second of source. */
@@ -60,7 +62,17 @@ export interface GraphicSpec {
   cutout?: boolean;
   /** What the clip's own asset is, so export knows to decode it as video. */
   media?: 'image' | 'video';
+  /** Visual style of the package. */
+  look?: GraphicLook;
+  /** How the final board totals up: sets won, or points (goals, runs) summed over periods. */
+  scoring?: 'sets' | 'points';
+  /** Depth map (asset id) of the clip's photo, for the living-photo parallax. */
+  depth?: string;
+  /** Show the photo still even though it has a depth map. */
+  still?: boolean;
 }
+
+export type GraphicLook = 'broadcast' | 'championship' | 'neon' | 'classic';
 
 export interface Transform {
   /** Centre offset from canvas centre, as a fraction of canvas width. */

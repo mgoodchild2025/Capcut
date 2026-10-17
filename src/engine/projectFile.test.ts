@@ -32,4 +32,14 @@ describe('project files', () => {
     const file = packProject({ project, assets: [a] });
     await expect(readProjectFile(file.slice(0, file.size - 10))).rejects.toThrow(/incomplete/);
   });
+
+  it('keeps media that only graphics use (logos, depth maps, roster photos)', async () => {
+    const project = createProject(1080, 1920, 'Graphics');
+    const files = ['photo', 'logo', 'opp', 'depth', 'tile'].map((id) => ({ meta: meta(id, 'image'), blob: new Blob([id]) }));
+    project.clips = [
+      { ...createMediaClip({ ...files[0].meta, url: '' }), kind: 'graphic', assetId: 'photo', graphic: { type: 'playerCard', colors: ['#000', '#fff'], text: {}, logo: 'logo', oppLogo: 'opp', depth: 'depth', players: [{ number: '1', name: 'A', photo: 'tile' }] } },
+    ];
+    const back = await readProjectFile(packProject({ project, assets: files }));
+    expect(back.assets.map((a) => a.meta.id).sort()).toEqual(['depth', 'logo', 'opp', 'photo', 'tile']);
+  });
 });

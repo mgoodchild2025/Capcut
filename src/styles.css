@@ -4580,3 +4580,51 @@ input[type='range']::-moz-range-thumb {
 .logo-row small {
   flex: 1 1 200px;
 }
+
+.sport-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.look-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.look-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.look-card.on {
+  border-color: var(--team2);
+  box-shadow: 0 0 0 1px var(--team2);
+}
+
+.look-card .card-preview {
+  width: 100%;
+  border-radius: 6px;
+}
+
+.look-card small {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .look-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

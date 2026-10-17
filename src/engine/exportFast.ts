@@ -15,6 +15,7 @@ import {
 import { projectDuration } from '../model/ops';
 import type { Asset, Clip, Project } from '../model/types';
 import { fastExportAvailable, frameCount, planVideoFrames, videoLayers } from './exportPlan';
+import { ensureLivePhoto } from './livePhoto';
 import { mixAudio } from './mix';
 import { renderFrame, type Source } from './render';
 
@@ -142,7 +143,7 @@ async function loadImages(project: Project, assets: Record<string, Asset>): Prom
     const g = clip.graphic;
     if (clip.kind === 'graphic' && g) {
       if (clip.assetId && g.media !== 'video') ids.add(clip.assetId);
-      for (const id of [g.logo, g.oppLogo, ...(g.players ?? []).map((p) => p.photo)]) if (id) ids.add(id);
+      for (const id of [g.logo, g.oppLogo, g.depth, ...(g.players ?? []).map((p) => p.photo)]) if (id) ids.add(id);
     }
   }
   for (const id of ids) {
@@ -195,6 +196,13 @@ export async function exportFast(
     // Decoders are set up first so an undecodable clip falls back before any work is done.
     feed = await FrameFeed.create(project, assets, opts.fps, width, height);
     const images = await loadImages(project, assets);
+    // Living photos must have their layers before the first frame.
+    for (const clip of project.clips) {
+      const g = clip.graphic;
+      const photo = clip.assetId ? images.get(clip.assetId) : undefined;
+      const depth = g?.depth ? images.get(g.depth) : undefined;
+      if (photo && depth) await ensureLivePhoto(`${clip.assetId}|${g!.depth}`, photo, depth);
+    }
     checkAbort(opts.signal);
 
     const audio = await mixAudio(project, assets, { sampleRate: SAMPLE_RATE, channels: 2, signal: opts.signal });

@@ -23,7 +23,7 @@ import { formatBytes, formatDuration } from '../utils';
 
 export const TABS: { id: LeftTab; label: string; icon: string }[] = [
   { id: 'media', label: 'Media', icon: 'media' },
-  { id: 'volleyball', label: 'Volleyball', icon: 'volleyball' },
+  { id: 'volleyball', label: 'Sports', icon: 'volleyball' },
   { id: 'audio', label: 'Audio', icon: 'audio' },
   { id: 'text', label: 'Text', icon: 'text' },
   { id: 'captions', label: 'Captions', icon: 'captions' },
@@ -104,7 +104,7 @@ function MediaTab({ kinds }: { kinds: Asset['kind'][] }) {
   const assets = useEditor((s) => s.assets);
   const clips = useEditor((s) => s.project.clips);
   const [filter, setFilter] = useState<'all' | Asset['kind']>('all');
-  const list = Object.values(assets).filter((a) => kinds.includes(a.kind) && (filter === 'all' || a.kind === filter));
+  const list = Object.values(assets).filter((a) => !a.internal && kinds.includes(a.kind) && (filter === 'all' || a.kind === filter));
   const isAudio = kinds.includes('audio');
   const used = new Set(clips.map((c) => c.assetId));
 

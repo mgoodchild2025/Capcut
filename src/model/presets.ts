@@ -70,10 +70,12 @@ export const TRANSITIONS: { id: TransitionKind; label: string }[] = [
   { id: 'wipe-right', label: 'Wipe' },
   { id: 'zoom', label: 'Zoom' },
   { id: 'blur', label: 'Blur' },
+  { id: 'flash', label: 'Flash' },
 ];
 
 export const FONTS = [
   'Inter, system-ui, sans-serif',
+  '"Big Shoulders Display", Impact, sans-serif',
   'Georgia, serif',
   '"Courier New", monospace',
   'Impact, "Arial Black", sans-serif',
@@ -101,16 +103,17 @@ export const DEFAULT_TEXT: TextStyle = {
 
 export const TEXT_TEMPLATES: { id: string; label: string; style: Partial<TextStyle> }[] = [
   { id: 'plain', label: 'Default', style: {} },
-  { id: 'title', label: 'Big Title', style: { content: 'BIG TITLE', fontSize: 160, fontFamily: FONTS[3], bold: false } },
+  { id: 'title', label: 'Big Title', style: { content: 'BIG TITLE', fontSize: 160, fontFamily: FONTS[4], bold: false } },
   { id: 'outline', label: 'Outline', style: { content: 'Outline', color: '#ffffff', strokeColor: '#000000', strokeWidth: 10, shadow: false } },
   { id: 'caption', label: 'Caption', style: { content: 'Add a caption', fontSize: 64, background: 'rgba(0,0,0,0.65)', shadow: false } },
   { id: 'neon', label: 'Neon', style: { content: 'NEON', color: '#39ff14', fontSize: 130, shadow: true, strokeColor: '#0a3d0a', strokeWidth: 4 } },
   { id: 'label', label: 'Label', style: { content: 'LABEL', color: '#111111', background: '#ffd400', fontSize: 72 } },
-  { id: 'serif', label: 'Elegant', style: { content: 'Elegant', fontFamily: FONTS[1], italic: true, bold: false, fontSize: 110 } },
-  { id: 'mono', label: 'Typewriter', style: { content: 'typewriter_', fontFamily: FONTS[2], bold: false, fontSize: 80, color: '#e8e8e8' } },
+  { id: 'serif', label: 'Elegant', style: { content: 'Elegant', fontFamily: FONTS[2], italic: true, bold: false, fontSize: 110 } },
+  { id: 'mono', label: 'Typewriter', style: { content: 'typewriter_', fontFamily: FONTS[3], bold: false, fontSize: 80, color: '#e8e8e8' } },
 ];
 
 export const STICKERS = [
+  '\u{1F3D0}', '\u{1F3C6}', '\u{1F947}', '\u{1F4A5}',
   '\u{1F525}', '\u{2728}', '\u{1F389}', '\u{1F60D}', '\u{1F602}', '\u{1F60E}', '\u{1F914}', '\u{1F631}',
   '\u{1F44D}', '\u{1F44F}', '\u{1F64C}', '\u{1F4AF}', '\u{2764}\u{FE0F}', '\u{1F49C}', '\u{1F499}', '\u{2B50}',
   '\u{1F31F}', '\u{26A1}', '\u{1F308}', '\u{2600}\u{FE0F}', '\u{1F319}', '\u{1F30A}', '\u{1F338}', '\u{1F340}',

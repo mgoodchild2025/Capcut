@@ -78,7 +78,8 @@ export type TransitionKind =
   | 'slide-up'
   | 'wipe-right'
   | 'zoom'
-  | 'blur';
+  | 'blur'
+  | 'flash';
 
 export interface TextStyle {
   content: string;

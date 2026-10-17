@@ -27,7 +27,7 @@ import {
   setHold,
   type ClipStyle,
 } from './model/ops';
-import { CURVE_PRESETS, removeKeyframe, setKeyframe, valueAt, hasKeyframeAt } from './model/timing';
+import { CURVE_PRESETS, curveAverage, removeKeyframe, setKeyframe, valueAt, hasKeyframeAt } from './model/timing';
 import type { Asset, Clip, KeyProp, Project, Spotlight, TextStyle, TransitionKind } from './model/types';
 import { addAsset, commit, edit, openProject, patchAsset, select, selectedClip, toast, useEditor } from './store';
 
@@ -720,4 +720,125 @@ export function stopVoiceover() {
   engine.pause();
   recorder?.stop();
   recorder = null;
+}
+
+// ---------- volleyball: highlights and reels ----------
+
+export async function findHighlightsIn(assetId: string): Promise<void> {
+  const asset = get().assets[assetId];
+  if (!asset || asset.kind !== 'video') return;
+  const res = await runTask('Finding highlights', async (report, signal) => {
+    const { analyzeFootage } = await import('./ai/highlights');
+    return analyzeFootage(asset, { onProgress: report, signal });
+  });
+  if (!res) return;
+  const { useHighlights, highlightKey } = await import('./ai/highlightState');
+  const st = useHighlights.getState();
+  const top = res.slice(0, Math.min(6, res.length)).map((h, i) => highlightKey(h, i));
+  useHighlights.setState({
+    byAsset: { ...st.byAsset, [assetId]: res },
+    selected: [...st.selected.filter((k) => !k.startsWith(`${assetId}:`)), ...top],
+  });
+  toast(res.length ? `Found ${res.length} highlight${res.length === 1 ? '' : 's'}` : 'No standout moments found in that clip');
+}
+
+/** Appends the selected highlights to the main track, optionally with a slow-motion Hero curve. */
+export async function addHighlightsToTimeline(slowmo: boolean) {
+  const { selectedHighlights } = await import('./ai/highlightState');
+  const list = selectedHighlights();
+  if (!list.length) {
+    toast('Select some highlights first');
+    return;
+  }
+  const hero = CURVE_PRESETS.find((c) => c.id === 'hero')!;
+  edit((p) => {
+    let next = p;
+    for (const h of list.sort((a, b) => (a.assetId === b.assetId ? a.start - b.start : 0))) {
+      const asset = get().assets[h.assetId];
+      if (!asset) continue;
+      let clip: Clip = { ...createMediaClip(asset), inPoint: h.start, duration: h.end - h.start };
+      if (slowmo) {
+        clip = { ...clip, curve: { id: 'hero', points: hero.points.map((x) => ({ ...x })) } };
+        clip.duration = (h.end - h.start) / curveAverage(clip);
+      }
+      next = appendToMain(next, clip);
+    }
+    return next;
+  });
+  toast(`Added ${list.length} highlight${list.length === 1 ? '' : 's'}`);
+}
+
+export interface WizardResult {
+  style: import('./templates/reel').ReelStyle;
+  info: import('./templates/reel').ReelInfo;
+  clips: import('./templates/reel').ReelClip[];
+  musicId: string | null;
+}
+
+/** Generates cards and sound, then lays out the reel in the current project (undoable). */
+export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
+  const ok = await runTask('Building your reel', async (report) => {
+    const { REEL_STYLES, buildReel } = await import('./templates/reel');
+    const { cardImage } = await import('./templates/cards');
+    const style = REEL_STYLES.find((s) => s.id === w.style)!;
+    const [W, H] = style.aspect;
+    const ids: Record<string, string> = {};
+    type Variant = import('./templates/cards').CardVariant;
+    const variants: Variant[] = ['intro'];
+    if (w.style === 'recruiting') variants.push('info');
+    if (w.info.stats.some(([k, v]) => k && v)) variants.push('stats');
+    variants.push('outro');
+    let step = 0;
+    const steps = variants.length + (w.musicId ? 1 : 0) + 2;
+    for (const v of variants) {
+      const blob = await cardImage(W, H, w.info.colors, v);
+      const a = await importBlob(blob, `${v} card.png`);
+      if (a) ids[v] = a.id;
+      report(++step / steps);
+    }
+    let music: Asset | null = null;
+    if (w.musicId) {
+      const { MUSIC } = await import('./audio/synth');
+      const track = MUSIC.find((m) => m.id === w.musicId)!;
+      const { blob, beats, bpm } = await renderSound('music', w.musicId);
+      music = await importBlob(blob, `${track.title} (${track.bpm} BPM).wav`);
+      if (music) {
+        patchAsset(music.id, { beats, bpm });
+        music = get().assets[music.id];
+      }
+      report(++step / steps);
+    }
+    const sfx = async (id: string, name: string) => importBlob((await renderSound('sfx', id)).blob, name);
+    const whoosh = w.style === 'hype' ? await sfx('whoosh', 'Whoosh.wav') : null;
+    report(++step / steps);
+    const impact = await sfx('impact', 'Impact.wav');
+    report(++step / steps);
+
+    const built = buildReel(
+      {
+        style: w.style,
+        info: w.info,
+        clips: w.clips,
+        cards: {
+          intro: ids.intro,
+          info: ids.info,
+          stats: ids.stats,
+          outro: ids.outro,
+          music: music?.id,
+          whoosh: whoosh?.id,
+          impact: impact?.id,
+        },
+      },
+      get().assets,
+    );
+    const current = get().project;
+    commit({ ...built, id: current.id, createdAt: current.createdAt });
+    engine.pause();
+    // Land on the finished title card rather than its first, still-animating frame.
+    engine.seek(1.2);
+    select(null);
+    return true;
+  });
+  if (ok) toast('Your reel is ready. Press play!');
+  return !!ok;
 }

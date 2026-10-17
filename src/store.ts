@@ -5,7 +5,7 @@ import type { Asset, Project } from './model/types';
 
 const HISTORY_LIMIT = 100;
 
-export type LeftTab = 'media' | 'audio' | 'text' | 'captions' | 'stickers' | 'filters' | 'transitions';
+export type LeftTab = 'volleyball' | 'media' | 'audio' | 'text' | 'captions' | 'stickers' | 'filters' | 'transitions';
 
 export interface EditorState {
   view: 'home' | 'editor';
@@ -29,6 +29,8 @@ export interface EditorState {
   pick: 'chroma' | 'spotlight' | null;
   /** Voiceover recording in progress, started at this timeline time. */
   recording: { start: number } | null;
+  /** Highlight reel wizard; `style` preselects a template. */
+  wizard: { style?: 'recruiting' | 'hype' | 'recap' } | null;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -49,6 +51,7 @@ export const useEditor = create<EditorState>(() => ({
   task: null,
   pick: null,
   recording: null,
+  wizard: null,
 }));
 
 const get = useEditor.getState;

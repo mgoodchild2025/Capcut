@@ -178,6 +178,8 @@ export async function exportFast(
   canvas.height = height;
   const ctx = canvas.getContext('2d', { alpha: false })!;
 
+  // Text must render in its final font from the first frame.
+  await Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 3000))]);
   let feed: FrameFeed | null = null;
   let output: Output | null = null;
   try {

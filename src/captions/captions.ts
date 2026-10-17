@@ -54,7 +54,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
   {
     id: 'pop',
     label: 'Pop',
-    style: { fontSize: 110, fontFamily: FONTS[3], color: '#ffffff', strokeColor: '#000000', strokeWidth: 12, shadow: true, bold: false },
+    style: { fontSize: 110, fontFamily: FONTS[1], color: '#ffffff', strokeColor: '#000000', strokeWidth: 12, shadow: true, bold: true },
     highlight: '#39ff14',
     maxWords: 2,
     maxChars: 16,

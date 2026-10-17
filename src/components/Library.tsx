@@ -14,6 +14,7 @@ import { CAPTION_PRESETS, hasCaptions } from '../captions/captions';
 import { cancelCaptions, clearCaptions, generateCaptions, restyleCaptions, useCaptions } from '../captions/state';
 import { LANGUAGES } from '../captions/languages';
 import { AudioTab } from './AudioTab';
+import { VolleyballTab } from './VolleyballTab';
 import { DEFAULT_TEXT, FILTERS, STICKERS, TEXT_TEMPLATES, TRANSITIONS } from '../model/presets';
 import type { Asset } from '../model/types';
 import { selectedClip, useEditor, type LeftTab } from '../store';
@@ -22,6 +23,7 @@ import { formatBytes, formatDuration } from '../utils';
 
 export const TABS: { id: LeftTab; label: string; icon: string }[] = [
   { id: 'media', label: 'Media', icon: 'media' },
+  { id: 'volleyball', label: 'Volleyball', icon: 'volleyball' },
   { id: 'audio', label: 'Audio', icon: 'audio' },
   { id: 'text', label: 'Text', icon: 'text' },
   { id: 'captions', label: 'Captions', icon: 'captions' },
@@ -61,6 +63,8 @@ export function LibraryTabBody({ tab }: { tab: LeftTab }) {
   switch (tab) {
     case 'media':
       return <MediaTab kinds={['video', 'image']} />;
+    case 'volleyball':
+      return <VolleyballTab />;
     case 'audio':
       return <AudioTab mine={<MediaTab kinds={['audio']} />} />;
     case 'text':

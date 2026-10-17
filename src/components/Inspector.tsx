@@ -410,7 +410,7 @@ function BeatSection({ clip }: { clip: Clip }) {
         <Icon name="beat" /> {asset.beats ? 'Mark beats on the timeline' : 'Find beats'}
       </button>
       <div className="beat-cut">
-        <span className="muted small">Cut main track every</span>
+        <span className="muted small">Cut every</span>
         <Segmented value={every} onChange={setEvery} options={[1, 2, 4, 8].map((n) => ({ value: n, label: String(n) }))} />
         <span className="muted small">beats</span>
       </div>

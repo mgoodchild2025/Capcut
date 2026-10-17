@@ -842,3 +842,22 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
   if (ok) toast('Your reel is ready. Press play!');
   return !!ok;
 }
+
+/** AI voiceover: speaks the text on-device and drops it at the playhead. */
+export async function generateSpeech(text: string, voice: string): Promise<boolean> {
+  const clean = text.trim();
+  if (!clean) return false;
+  const res = await runTask('Generating voice', async (report) => {
+    const { synthesizeSpeech } = await import('./ai/tts');
+    const wav = await synthesizeSpeech(clean, voice, report);
+    const words = clean.split(/\s+/).slice(0, 4).join(' ');
+    const asset = await importBlob(wav, `Voice - ${words}.wav`);
+    if (!asset) return false;
+    const clip = { ...createMediaClip(asset), start: get().currentTime, name: `Voice: ${words}` };
+    edit((p) => placeClip(p, clip));
+    select(clip.id);
+    return true;
+  });
+  if (res) toast('Voiceover added at the playhead');
+  return !!res;
+}

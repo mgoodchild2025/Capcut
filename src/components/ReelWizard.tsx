@@ -230,7 +230,7 @@ export function ReelWizard() {
         <footer className="wiz-foot">
           <span className="wiz-summary">
             {meta.title} · {meta.roster === 'intros' ? `${starters} starter${starters === 1 ? '' : 's'}` : `${clips.length} clip${clips.length === 1 ? '' : 's'}`}
-            {musicId ? ` · ${MUSIC.find((m) => m.id === musicId)?.title}` : ''}
+            {musicId ? ` · ${musicId.startsWith('asset:') ? (assets[musicId.slice(6)]?.name.replace(/\.[^.]+$/, '') ?? 'Your song') : MUSIC.find((m) => m.id === musicId)?.title}` : ''}
           </span>
           <div className="wiz-actions">
             {idx > 0 && (
@@ -1246,6 +1246,65 @@ function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; set
           No music
         </button>
       </div>
+      <OwnSongs musicId={musicId} setMusicId={setMusicId} />
     </section>
+  );
+}
+
+/** Generated sound files the app made itself, which aren't the user's songs. */
+const GENERATED = /^(Whoosh|Impact)\.wav$|\(\d+ BPM\)\.wav$/;
+
+/** Your own music: any song on the device, cut to its beat. */
+function OwnSongs({ musicId, setMusicId }: { musicId: string | null; setMusicId: (id: string | null) => void }) {
+  const assets = useEditor((s) => s.assets);
+  const songs = Object.values(assets).filter((a) => a.kind === 'audio' && !a.internal && !GENERATED.test(a.name));
+  const [playing, setPlaying] = useState<string | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => () => audio.current?.pause(), []);
+  const preview = (id: string) => {
+    audio.current?.pause();
+    if (playing === id) {
+      setPlaying(null);
+      return;
+    }
+    stopPreviewSound();
+    const el = new Audio(assets[id].url);
+    el.onended = () => setPlaying(null);
+    void el.play().catch(() => setPlaying(null));
+    audio.current = el;
+    setPlaying(id);
+  };
+  const pick = async (files: FileList) => {
+    const added = await importFiles(files);
+    const song = added.find((a) => a.kind === 'audio');
+    if (song) setMusicId(`asset:${song.id}`);
+  };
+  return (
+    <div className="own-songs">
+      <h4 className="wiz-sub">Your own song</h4>
+      <p className="hint">Use a track from your device. Beat-cut reels find its beats and cut on them. Only post music you have the rights to.</p>
+      <div className="music-picks">
+        {songs.map((a) => {
+          const id = `asset:${a.id}`;
+          return (
+            <div key={a.id} className={`music-pick ${musicId === id ? 'on' : ''}`}>
+              <button className="music-art own" aria-label={playing === a.id ? `Stop ${a.name}` : `Preview ${a.name}`} onClick={() => preview(a.id)}>
+                <Icon name={playing === a.id ? 'pause' : 'play'} size={18} />
+              </button>
+              <button className="music-choose" onClick={() => setMusicId(id)}>
+                <strong>{a.name.replace(/\.[^.]+$/, '')}</strong>
+                <small>
+                  Your music{a.bpm ? ` · ${a.bpm} BPM` : ''} · {formatDuration(a.duration)}
+                </small>
+              </button>
+            </div>
+          );
+        })}
+        <label className="music-none own-import">
+          <Icon name="upload" size={16} /> Choose a song
+          <input type="file" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" hidden onChange={(e) => e.target.files?.length && void pick(e.target.files)} />
+        </label>
+      </div>
+    </div>
   );
 }

@@ -26,6 +26,10 @@ const assets: Record<string, Asset> = {
   music: asset('music', 'audio', 60, { bpm: 120, beats: Array.from({ length: 120 }, (_, i) => i * 0.5) }),
   whoosh: asset('whoosh', 'audio', 0.9),
   impact: asset('impact', 'audio', 2),
+  roster: asset('roster', 'image', Infinity),
+  photo: asset('photo', 'image', Infinity, { width: 1080, height: 1350 }),
+  n4: asset('n4', 'image', Infinity),
+  self: asset('self', 'image', Infinity),
 };
 
 const info: ReelInfo = {
@@ -45,6 +49,14 @@ const info: ReelInfo = {
     ['Kills', '245'],
     ['Aces', '41'],
   ],
+  headline: 'Player of the Game',
+  opponent: 'Westside Storm',
+  roster: [
+    { key: 'r1', number: '12', name: 'Jordan Lee', position: 'Outside Hitter', starter: true, assetId: 'photo' },
+    { key: 'r2', number: '4', name: 'Sam Rivera', position: 'Setter', starter: true },
+    { key: 'r3', number: '9', name: 'Ava Chen', position: 'Libero', starter: false },
+    { key: 'r4', number: '7', name: 'Mia Ortiz', position: 'Middle Blocker', starter: true, assetId: 'game2' },
+  ],
 };
 
 const input = (style: ReelInput['style']): ReelInput => ({
@@ -55,8 +67,15 @@ const input = (style: ReelInput['style']): ReelInput => ({
     { assetId: 'game2', inPoint: 10, duration: 6, tag: 'Block' },
     { assetId: 'game1', inPoint: 80, duration: 8 },
   ],
-  cards: { intro: 'intro', info: 'info', stats: 'stats', outro: 'outro', music: 'music', whoosh: 'whoosh', impact: 'impact' },
+  cards: { intro: 'intro', info: 'info', stats: 'stats', outro: 'outro', music: 'music', whoosh: 'whoosh', impact: 'impact', roster: 'roster', players: { r2: 'n4', self: 'self' } },
 });
+
+const texts = (p: ReturnType<typeof buildReel>) => p.clips.filter((c) => c.kind === 'text').map((c) => c.text!.content);
+const contiguous = (p: ReturnType<typeof buildReel>) => {
+  const main = trackClips(p, getMainTrack(p).id);
+  for (let i = 1; i < main.length; i++) expect(main[i].start).toBeCloseTo(main[i - 1].start + main[i - 1].duration, 6);
+  return main;
+};
 
 describe('highlight reel builder', () => {
   it('builds a recruiting reel: intro, profile, clips, stats, outro', () => {
@@ -82,7 +101,7 @@ describe('highlight reel builder', () => {
   });
 
   it('keeps every text overlay inside the reel', () => {
-    for (const style of ['recruiting', 'hype', 'recap'] as const) {
+    for (const style of ['recruiting', 'hype', 'recap', 'spotlight', 'team', 'lineup'] as const) {
       const p = buildReel(input(style), assets);
       const end = Math.max(...p.clips.filter((c) => c.kind !== 'audio').map((c) => c.start + c.duration));
       for (const c of p.clips.filter((x) => x.kind === 'text')) {
@@ -115,5 +134,58 @@ describe('highlight reel builder', () => {
     const texts = p.clips.filter((c) => c.kind === 'text').map((c) => c.text!.content);
     expect(texts).toContain('SEASON 2026');
     expect(texts).toContain('GO ROCKETS!');
+  });
+
+  it('builds a 4:5 player spotlight that rings the player in every spotted play', () => {
+    const p = buildReel(input('spotlight'), assets);
+    expect([p.settings.width, p.settings.height]).toEqual([1080, 1350]);
+    const main = contiguous(p);
+    expect(main[0].assetId).toBe('self');
+    expect(main[main.length - 1].assetId).toBe('self');
+    const spot = main.find((c) => c.spotlight)!;
+    expect(spot.hold).toBe(1.2);
+    expect(spot.fit).toBe('cover');
+    const t = texts(p);
+    expect(t).toContain('PLAYER OF THE GAME');
+    expect(t).toContain('BY THE NUMBERS');
+    // A name tag on each of the three plays.
+    expect(t.filter((x) => x === '#12 JORDAN LEE').length).toBe(3);
+    expect(t.some((x) => /jordan@example.com/.test(x))).toBe(false);
+  });
+
+  it('builds a team reel with a roster card and plays credited to players', () => {
+    const clips = input('team').clips.map((c, i) => ({ ...c, player: ['r1', 'r2', undefined][i] }));
+    const p = buildReel({ ...input('team'), clips, info: { ...info, name: 'Rockets' } }, assets);
+    expect(p.settings.height).toBe(1920);
+    const main = contiguous(p);
+    expect(main.map((c) => c.assetId)).toEqual(['intro', 'roster', 'game1', 'game2', 'game1', 'stats', 'outro']);
+    for (const c of main) expect(Math.abs(c.start / 2 - Math.round(c.start / 2))).toBeLessThan(1e-6);
+    const t = texts(p);
+    expect(t).toContain('THE SQUAD');
+    expect(t.some((x) => /#12\s+JORDAN LEE/.test(x) && /#4\s+SAM RIVERA/.test(x))).toBe(true);
+    expect(t).toContain('#12 JORDAN LEE  ·  KILL');
+    expect(t).toContain('#4 SAM RIVERA  ·  BLOCK');
+    expect(t).toContain('WE ARE');
+    expect(main.filter((c) => c.kind === 'video').every((c) => c.fit === 'cover')).toBe(true);
+  });
+
+  it('builds a starting lineup with one reveal per starter', () => {
+    const p = buildReel({ ...input('lineup'), clips: [], info: { ...info, name: 'Rockets' } }, assets);
+    const main = contiguous(p);
+    // Intro, three starters (the libero is on the bench), outro.
+    expect(main.map((c) => c.assetId)).toEqual(['intro', 'photo', 'n4', 'game2', 'outro']);
+    for (const c of main) expect(Math.abs(c.start / 2 - Math.round(c.start / 2))).toBeLessThan(1e-6);
+    // Photos get a slow push-in; video plays muted.
+    expect(main[1].keyframes?.scale?.map((k) => k.v)).toEqual([1, 1.12]);
+    expect(main[3].volume).toBe(0);
+    const t = texts(p);
+    expect(t).toContain('STARTING\nLINEUP');
+    expect(t).toContain('ROCKETS\nVS WESTSIDE STORM');
+    expect(t).toContain('JORDAN\nLEE');
+    expect(t).toContain('#4');
+    expect(t).toContain('SETTER');
+    expect(t.some((x) => /AVA/.test(x))).toBe(false);
+    expect(t).toContain('ROCKETS!');
+    expect(p.clips.filter((c) => c.assetId === 'whoosh').length).toBe(main.length - 1);
   });
 });

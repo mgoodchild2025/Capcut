@@ -1,12 +1,16 @@
 import { contrastInk } from '../engine/render';
-import { createMediaClip, createProject, createTextClip } from '../model/factory';
+import { createMediaClip, createProject } from '../model/factory';
 import { appendToMain, clipEnd, getMainTrack, placeClip } from '../model/ops';
-import { FONTS } from '../model/presets';
 import { CURVE_PRESETS, durationForSpan } from '../model/timing';
-import type { Asset, Clip, Project, TextStyle, TransitionKind } from '../model/types';
+import type { Asset, Clip, Project, TransitionKind } from '../model/types';
 import { uid } from '../utils';
+import { barFitter, IMPACT, SANS, text, upper } from './shared';
+import { buildLineupReel, buildSpotlightReel, buildTeamReel } from './teamReels';
 
-export type ReelStyle = 'recruiting' | 'hype' | 'recap';
+export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'team' | 'lineup';
+
+/** Which wizard steps a style uses and what it's about. */
+export type ReelSubject = 'player' | 'team';
 
 export const REEL_STYLES: {
   id: ReelStyle;
@@ -14,6 +18,11 @@ export const REEL_STYLES: {
   blurb: string;
   aspect: [number, number];
   music: string;
+  subject: ReelSubject;
+  /** Credits each play to someone on the roster, or introduces the roster (no game clips). */
+  roster?: 'credits' | 'intros';
+  /** Asks the user to spot their player in each clip. */
+  spotlight?: boolean;
 }[] = [
   {
     id: 'recruiting',
@@ -21,6 +30,8 @@ export const REEL_STYLES: {
     blurb: 'Clean 16:9 cut for college coaches: profile card, player spotlights, skill labels, stats and contact info.',
     aspect: [1920, 1080],
     music: 'showcase',
+    subject: 'player',
+    spotlight: true,
   },
   {
     id: 'hype',
@@ -28,6 +39,35 @@ export const REEL_STYLES: {
     blurb: 'Vertical 9:16 for TikTok and Reels: beat-synced cuts, slow-mo on the hit, flashes and whooshes.',
     aspect: [1080, 1920],
     music: 'spike-anthem',
+    subject: 'player',
+    spotlight: true,
+  },
+  {
+    id: 'spotlight',
+    title: 'Player spotlight',
+    blurb: 'Square-ish 4:5 for the Instagram feed: Player of the Game, Senior Night or Athlete of the Week. Every play rings your player.',
+    aspect: [1080, 1350],
+    music: 'game-day',
+    subject: 'player',
+    spotlight: true,
+  },
+  {
+    id: 'team',
+    title: 'Team reel',
+    blurb: 'Vertical 9:16 for the team account: roster card, beat-synced plays credited to each player, team stats and a send-off.',
+    aspect: [1080, 1920],
+    music: 'spike-anthem',
+    subject: 'team',
+    roster: 'credits',
+  },
+  {
+    id: 'lineup',
+    title: 'Starting lineup',
+    blurb: 'Pre-game hype in 9:16: each starter gets a beat-timed reveal with number, name and position over their photo or clip.',
+    aspect: [1080, 1920],
+    music: 'spike-anthem',
+    subject: 'team',
+    roster: 'intros',
   },
   {
     id: 'recap',
@@ -35,14 +75,26 @@ export const REEL_STYLES: {
     blurb: 'Team-focused 16:9 montage: season title, best rallies with smooth dissolves, team stats and a send-off.',
     aspect: [1920, 1080],
     music: 'victory-lap',
+    subject: 'team',
   },
 ];
 
 export const POSITIONS = ['Outside Hitter', 'Opposite', 'Middle Blocker', 'Setter', 'Libero', 'Defensive Specialist', 'Right Side'];
 export const SKILL_TAGS = ['Kill', 'Ace', 'Block', 'Dig', 'Set', 'Serve receive', 'Save'];
 
+export interface RosterPlayer {
+  key: string;
+  number: string;
+  name: string;
+  position: string;
+  /** In the starting lineup. */
+  starter: boolean;
+  /** Photo or clip for their lineup reveal (not remembered between projects). */
+  assetId?: string;
+}
+
 export interface ReelInfo {
-  /** Player name, or team name for a season recap. */
+  /** Player name, or team name for team reels. */
   name: string;
   number: string;
   position: string;
@@ -56,6 +108,11 @@ export interface ReelInfo {
   record: string;
   colors: [string, string];
   stats: [string, string][];
+  /** Spotlight title, e.g. "Player of the Game". */
+  headline: string;
+  /** Tonight's opponent, for the starting lineup. */
+  opponent: string;
+  roster: RosterPlayer[];
 }
 
 export interface ReelClip {
@@ -65,6 +122,8 @@ export interface ReelClip {
   tag?: string;
   /** Player position in the frame (fractions), for the spotlight and vertical reframing. */
   spotlight?: { x: number; y: number };
+  /** Roster key of the player who made the play (team reels). */
+  player?: string;
 }
 
 export interface ReelAssets {
@@ -75,6 +134,10 @@ export interface ReelAssets {
   music?: string;
   whoosh?: string;
   impact?: string;
+  /** Roster card background (team reels). */
+  roster?: string;
+  /** Jersey-number cards by roster key, for players without a photo or clip. */
+  players?: Record<string, string>;
 }
 
 export interface ReelInput {
@@ -84,18 +147,11 @@ export interface ReelInput {
   cards: ReelAssets;
 }
 
-const IMPACT = FONTS[1];
-const SANS = FONTS[0];
-
-function text(content: string, start: number, duration: number, style: Partial<TextStyle>, x: number, y: number, extra: Partial<Clip> = {}): Clip {
-  const c = createTextClip({ shadow: true, ...style, content }, start);
-  return { ...c, duration, transform: { ...c.transform, x, y }, ...extra };
-}
-
-const upper = (s: string) => s.trim().toUpperCase();
-
 /** Lays out a whole highlight reel on a fresh timeline. */
 export function buildReel(input: ReelInput, assets: Record<string, Asset>): Project {
+  if (input.style === 'spotlight') return buildSpotlightReel(input, assets);
+  if (input.style === 'team') return buildTeamReel(input, assets);
+  if (input.style === 'lineup') return buildLineupReel(input, assets);
   const style = REEL_STYLES.find((s) => s.id === input.style)!;
   const [W, H] = style.aspect;
   const portrait = H > W;
@@ -109,12 +165,7 @@ export function buildReel(input: ReelInput, assets: Record<string, Asset>): Proj
   const recap = input.style === 'recap';
 
   /** Hype reels snap every section to whole bars of the music. */
-  const fit = (d: number, max = Infinity) => {
-    if (!hype || !bar) return Math.min(d, max);
-    let n = Math.max(1, Math.round(d / bar));
-    while (n > 1 && n * bar > max + 1e-6) n--;
-    return n * bar > max ? max : n * bar;
-  };
+  const fit = barFitter(bar, hype);
 
   let p: Project = { ...createProject(W, H, recap ? `${name} Season Recap` : `${name} Highlights`), markers: [] };
   const overlays: Clip[] = [];

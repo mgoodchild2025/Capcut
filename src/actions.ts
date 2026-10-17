@@ -811,14 +811,35 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     type Variant = import('./templates/cards').CardVariant;
     const variants: Variant[] = ['intro'];
     if (w.style === 'recruiting') variants.push('info');
+    if (w.style === 'team' && w.info.roster.length) variants.push('roster');
     if (w.info.stats.some(([k, v]) => k && v)) variants.push('stats');
     variants.push('outro');
+    // Jersey-number cards: the spotlight player, and lineup starters without a photo or clip.
+    const numberCards: [string, string][] =
+      w.style === 'spotlight'
+        ? [['self', w.info.number]]
+        : w.style === 'lineup'
+          ? w.info.roster.filter((r) => r.starter && !(r.assetId && get().assets[r.assetId])).map((r) => [r.key, r.number])
+          : [];
     let step = 0;
-    const steps = variants.length + (w.musicId ? 1 : 0) + 2;
+    const steps = variants.length + numberCards.length + (w.musicId ? 1 : 0) + 2;
     for (const v of variants) {
       const blob = await cardImage(W, H, w.info.colors, v);
       const a = await importBlob(blob, `${v} card.png`);
       if (a) ids[v] = a.id;
+      report(++step / steps);
+    }
+    const players: Record<string, string> = {};
+    const byNumber = new Map<string, string>();
+    for (const [key, number] of numberCards) {
+      // Players sharing a number (or with none) share a card.
+      let id = byNumber.get(number);
+      if (!id) {
+        const a = await importBlob(await cardImage(W, H, w.info.colors, 'player', { number }), `#${number || 'player'} card.png`);
+        id = a?.id;
+        if (id) byNumber.set(number, id);
+      }
+      if (id) players[key] = id;
       report(++step / steps);
     }
     let music: Asset | null = null;
@@ -834,7 +855,7 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
       report(++step / steps);
     }
     const sfx = async (id: string, name: string) => importBlob((await renderSound('sfx', id)).blob, name);
-    const whoosh = w.style === 'hype' ? await sfx('whoosh', 'Whoosh.wav') : null;
+    const whoosh = w.style === 'hype' || w.style === 'team' || w.style === 'lineup' ? await sfx('whoosh', 'Whoosh.wav') : null;
     report(++step / steps);
     const impact = await sfx('impact', 'Impact.wav');
     report(++step / steps);
@@ -852,6 +873,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
           music: music?.id,
           whoosh: whoosh?.id,
           impact: impact?.id,
+          roster: ids.roster,
+          players,
         },
       },
       get().assets,

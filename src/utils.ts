@@ -48,3 +48,12 @@ export function isTypingTarget(el: EventTarget | null): boolean {
   const tag = el.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
+
+/** iPhone or iPad, whatever the browser (they all run on WebKit there). iPadOS reports itself as a Mac. */
+export const isIOS = () =>
+  typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+/** Running as an installed app rather than in a browser tab. */
+export const isStandalone = () =>
+  typeof window !== 'undefined' &&
+  (window.matchMedia?.('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true);

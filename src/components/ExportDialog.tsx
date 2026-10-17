@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { Engine, engine } from '../engine/engine';
 import { fastExportAvailable } from '../engine/exportPlan';
 import { projectDuration } from '../model/ops';
-import { useEditor } from '../store';
+import { toast, useEditor } from '../store';
 import { Segmented } from '../ui/controls';
 import { Icon } from '../ui/Icon';
-import { formatBytes, formatDuration } from '../utils';
+import { formatBytes, formatDuration, isIOS } from '../utils';
 
 const RESOLUTIONS = [480, 720, 1080, 1440, 2160];
+const IOS = isIOS();
 const QUALITY = { low: 0.06, recommended: 0.12, high: 0.2 } as const;
 
-type Phase = { kind: 'setup' } | { kind: 'rendering'; progress: number; fast: boolean } | { kind: 'done'; url: string; size: number; ext: string } | { kind: 'error'; message: string };
+type Phase = { kind: 'setup' } | { kind: 'rendering'; progress: number; fast: boolean } | { kind: 'done'; url: string; blob: Blob; size: number; ext: string } | { kind: 'error'; message: string };
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditor((s) => s.project);
@@ -63,7 +64,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         result = await engine.export(opts);
       }
       const outExt = result.mime.includes('mp4') ? 'mp4' : 'webm';
-      setPhase({ kind: 'done', url: URL.createObjectURL(result.blob), size: result.blob.size, ext: outExt });
+      setPhase({ kind: 'done', url: URL.createObjectURL(result.blob), blob: result.blob, size: result.blob.size, ext: outExt });
     } catch (err) {
       if ((err as Error).name === 'AbortError') setPhase({ kind: 'setup' });
       else setPhase({ kind: 'error', message: (err as Error).message });
@@ -71,6 +72,15 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   };
 
   const fileName = `${project.name.replace(/[^\w\- ]+/g, '').trim() || 'video'}.${phase.kind === 'done' ? phase.ext : ext}`;
+  // Phones can hand the video to the share sheet, which saves it to Photos or posts it straight to an app.
+  const file = phase.kind === 'done' ? new File([phase.blob], fileName, { type: phase.ext === 'mp4' ? 'video/mp4' : 'video/webm' }) : null;
+  const canShare = !!file && typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [file] });
+  const share = () => {
+    if (!file) return;
+    navigator.share({ files: [file], title: project.name }).catch((e: Error) => {
+      if (e.name !== 'AbortError') toast(`Couldn't share: ${e.message}`);
+    });
+  };
 
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && phase.kind !== 'rendering' && onClose()}>
@@ -160,10 +170,16 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               <button className="btn" onClick={() => setPhase({ kind: 'setup' })}>
                 Export again
               </button>
-              <a className="btn primary" href={phase.url} download={fileName}>
+              <a className={`btn ${canShare ? '' : 'primary'}`} href={phase.url} download={fileName}>
                 <Icon name="export" /> Download
               </a>
+              {canShare && (
+                <button className="btn primary" onClick={share}>
+                  <Icon name="share" /> {IOS ? 'Save to Photos' : 'Share'}
+                </button>
+              )}
             </footer>
+            {canShare && IOS && <p className="hint share-hint">In the share sheet, choose Save Video to add it to Photos, or pick an app to post it.</p>}
           </div>
         )}
 

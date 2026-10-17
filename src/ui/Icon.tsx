@@ -25,6 +25,7 @@ const PATHS: Record<string, string> = {
   eyeOff: 'M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.9M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2',
   lock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4',
   unlock: 'M6 11h12v10H6zM8 11V7a4 4 0 0 1 7.5-2',
+  share: 'M12 15V3M8 7l4-4 4 4M6 11H5v10h14V11h-1',
   export: 'M12 3v12M7 8l5-5 5 5M5 14v6h14v-6',
   home: 'M3 11l9-8 9 8M5 9.5V21h14V9.5',
   close: 'M6 6l12 12M18 6L6 18',

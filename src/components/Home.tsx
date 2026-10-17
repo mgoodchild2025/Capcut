@@ -5,7 +5,9 @@ import { ASPECT_PRESETS } from '../model/presets';
 import { useEditor } from '../store';
 import { REEL_STYLES } from '../templates/reel';
 import { Icon } from '../ui/Icon';
-import { formatDuration } from '../utils';
+import { formatDuration, isIOS, isStandalone } from '../utils';
+
+const TILE_WORD: Record<string, string> = { recruiting: '#12', hype: '#12', spotlight: 'MVP', team: 'TEAM', lineup: 'LINEUP', recap: 'SEASON' };
 
 export function Home() {
   const [drafts, setDrafts] = useState<DraftSummary[] | null>(null);
@@ -54,6 +56,8 @@ export function Home() {
         </div>
         <span className="home-sub">Edit videos right in your browser. Nothing is uploaded.</span>
       </header>
+
+      <InstallTip />
 
       <section className="hero">
         <div className="hero-card">
@@ -111,8 +115,8 @@ export function Home() {
               }}
             >
               <span className="tpl-art" aria-hidden="true">
-                <span className={`tpl-frame ${t.aspect[1] > t.aspect[0] ? 'tall' : 'wide'}`}>
-                  <b>{t.id === 'recap' ? 'SEASON' : '#12'}</b>
+                <span className={`tpl-frame ${t.aspect[0] * 5 === t.aspect[1] * 4 ? 'feed' : t.aspect[1] > t.aspect[0] ? 'tall' : 'wide'}`}>
+                  <b>{TILE_WORD[t.id]}</b>
                   <i />
                 </span>
               </span>
@@ -182,5 +186,75 @@ export function Home() {
       </section>
       {dragging && <div className="drop-overlay">Drop media to start a new project</div>}
     </div>
+  );
+}
+
+interface InstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+}
+
+const TIP_KEY = 'clipforge.installTip';
+
+/** Offers to install the app: the browser's own prompt where there is one, instructions on iPhone. */
+function InstallTip() {
+  const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return isStandalone() || localStorage.getItem(TIP_KEY) === 'dismissed';
+    } catch {
+      return isStandalone();
+    }
+  });
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setPrompt(e as InstallPromptEvent);
+    };
+    const onInstalled = () => setHidden(true);
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+  const ios = isIOS();
+  if (hidden || (!prompt && !ios)) return null;
+  const dismiss = () => {
+    setHidden(true);
+    try {
+      localStorage.setItem(TIP_KEY, 'dismissed');
+    } catch {
+      /* storage unavailable */
+    }
+  };
+  return (
+    <aside className="install-tip">
+      <img src="./icons/icon-192.png" alt="" width={44} height={44} />
+      <span className="install-text">
+        <strong>Install ClipForge</strong>
+        {ios ? (
+          <small>
+            Tap <Icon name="share" size={13} /> Share, then <b>Add to Home Screen</b>. It opens full screen, like an app.
+          </small>
+        ) : (
+          <small>Opens full screen from your home screen or dock, and works offline.</small>
+        )}
+      </span>
+      {prompt && (
+        <button
+          className="btn primary"
+          onClick={async () => {
+            await prompt.prompt();
+            setPrompt(null);
+          }}
+        >
+          Install
+        </button>
+      )}
+      <button className="icon-btn" aria-label="Dismiss" onClick={dismiss}>
+        <Icon name="close" size={16} />
+      </button>
+    </aside>
   );
 }

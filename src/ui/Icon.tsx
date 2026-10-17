@@ -1,6 +1,7 @@
 const PATHS: Record<string, string> = {
   play: 'M8 5.5v13l11-6.5z',
   pause: 'M7 5h3.5v14H7zM13.5 5H17v14h-3.5z',
+  replay: 'M4 4v5h5M4.6 9A8 8 0 1 1 4 13',
   undo: 'M9 7H5V3M5.5 7.5A8 8 0 1 1 4 13',
   redo: 'M15 7h4V3M18.5 7.5A8 8 0 1 0 20 13',
   split: 'M12 3v18M7 7l-3 5 3 5M17 7l3 5-3 5',

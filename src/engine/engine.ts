@@ -3,13 +3,19 @@ import { clipGain, rateAt } from '../model/timing';
 import type { Asset, Clip } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
-import { renderFrame, type DrawBox, type Source } from './render';
+import { cssFilterFor, renderFrame, type DirectPlacement, type DrawBox, type Source } from './render';
+import { motionFor } from './render';
 
 interface MediaEntry {
   el: HTMLVideoElement | HTMLAudioElement;
   assetId: string;
   gain?: GainNode;
+  /** Positions the element when the preview shows it directly. */
+  wrap?: HTMLDivElement;
 }
+
+/** How long the clock may wait for the leading video to start or catch up before running on regardless. */
+const MAX_STALL_MS = 1200;
 
 type FrameListener = (boxes: DrawBox[]) => void;
 
@@ -39,6 +45,16 @@ class Engine {
   private dirtyFrames = 10;
   private listeners = new Set<FrameListener>();
   private onEnded: (() => void) | null = null;
+  /** Holds the directly displayed video under the preview canvas. */
+  private directHost: HTMLDivElement | null = null;
+  private directShown: MediaEntry | null = null;
+  private stallMs = 0;
+  private lastLoop = 0;
+  /**
+   * Show the bottom video as a page element rather than copying every frame onto the canvas.
+   * Copying is the slow part of playback on phones; desktops handle it fine, so it's on for touch devices.
+   */
+  directVideo = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   boxes: DrawBox[] = [];
 
   constructor() {
@@ -66,6 +82,16 @@ class Engine {
 
   setPreviewCanvas(canvas: HTMLCanvasElement | null) {
     this.preview = canvas;
+    this.directHost?.remove();
+    this.directHost = null;
+    this.directShown = null;
+    if (canvas?.parentElement) {
+      const host = document.createElement('div');
+      host.className = 'direct-host';
+      canvas.parentElement.insertBefore(host, canvas);
+      for (const entry of this.media.values()) if (entry.wrap) host.appendChild(entry.wrap);
+      this.directHost = host;
+    }
     this.invalidate();
   }
 
@@ -87,6 +113,7 @@ class Engine {
     this.ensureAudio();
     let t = s.currentTime;
     if (t >= dur - 0.01) t = 0;
+    this.stallMs = 0;
     this.clockStartTime = t;
     this.clockStartWall = performance.now();
     useEditor.setState({ playing: true, currentTime: t });
@@ -189,6 +216,82 @@ class Engine {
     return entry;
   }
 
+  /** Keeps the timeline where it is while the leading video starts or buffers, up to a limit. */
+  private holdClock(t: number, dtMs: number) {
+    this.stallMs += dtMs;
+    if (this.stallMs > MAX_STALL_MS) return;
+    this.clockStartTime = t;
+    this.clockStartWall = performance.now();
+  }
+
+  /** The bottom layer, if it's a video the page can show as is (nothing that only the canvas can draw). */
+  private directCandidate(t: number): { clipId: string; entry: MediaEntry } | null {
+    if (!this.directVideo || !this.directHost || this.exportCtx) return null;
+    const { project } = useEditor.getState();
+    const layer = activeLayers(project, t).find((l) => !l.track.hidden && l.track.kind !== 'audio' && l.clip.kind !== 'audio');
+    if (!layer) return null;
+    const { clip } = layer;
+    if (clip.kind !== 'video' || clip.chroma || clip.spotlight || clip.adjust.vignette > 0 || layer.transition) return null;
+    if (motionFor(layer).wipe !== null) return null;
+    const entry = this.media.get(clip.id);
+    if (!entry || !(entry.el instanceof HTMLVideoElement) || !entry.el.videoWidth) return null;
+    return { clipId: clip.id, entry };
+  }
+
+  private placeDirect(entry: MediaEntry, p: DirectPlacement) {
+    const canvas = this.preview;
+    const host = this.directHost;
+    if (!canvas || !host) return;
+    const { settings } = useEditor.getState().project;
+    const kx = canvas.clientWidth / settings.width;
+    const ky = canvas.clientHeight / settings.height;
+    let wrap = entry.wrap;
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.className = 'direct-clip';
+      wrap.appendChild(entry.el);
+      entry.wrap = wrap;
+    }
+    if (wrap.parentElement !== host) host.appendChild(wrap);
+    if (this.directShown && this.directShown !== entry && this.directShown.wrap) this.directShown.wrap.style.display = 'none';
+    this.directShown = entry;
+    host.style.background = settings.background;
+
+    const c = p.clip.crop;
+    const left = c?.left ?? 0;
+    const top = c?.top ?? 0;
+    const w = p.w * kx;
+    const h = p.h * ky;
+    const innerW = w / Math.max(0.01, 1 - left - (c?.right ?? 0));
+    const innerH = h / Math.max(0.01, 1 - top - (c?.bottom ?? 0));
+    const flip = p.clip.flipH || p.clip.flipV ? ` scale(${p.clip.flipH ? -1 : 1},${p.clip.flipV ? -1 : 1})` : '';
+    setStyle(wrap, {
+      display: 'block',
+      left: `${p.cx * kx - w / 2}px`,
+      top: `${p.cy * ky - h / 2}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      transform: p.rotation ? `rotate(${p.rotation}deg)` : '',
+      opacity: p.alpha < 1 ? String(p.alpha) : '',
+    });
+    setStyle(entry.el as HTMLVideoElement, {
+      left: `${-left * innerW}px`,
+      top: `${-top * innerH}px`,
+      width: `${innerW}px`,
+      height: `${innerH}px`,
+      // Flip around the visible frame's centre, as the canvas does.
+      transformOrigin: `${left * innerW + w / 2}px ${top * innerH + h / 2}px`,
+      transform: flip,
+      filter: cssFilterFor(p.clip, p.extraBlur, kx) === 'none' ? '' : cssFilterFor(p.clip, p.extraBlur, kx),
+    });
+  }
+
+  private hideDirect() {
+    if (this.directShown?.wrap) this.directShown.wrap.style.display = 'none';
+    this.directShown = null;
+    if (this.directHost) this.directHost.style.background = '';
+  }
+
   private dispose(clipId: string) {
     const entry = this.media.get(clipId);
     if (!entry) return;
@@ -196,6 +299,8 @@ class Engine {
     entry.el.removeAttribute('src');
     entry.el.load();
     entry.gain?.disconnect();
+    entry.wrap?.remove();
+    if (this.directShown === entry) this.directShown = null;
     this.media.delete(clipId);
   }
 
@@ -243,11 +348,12 @@ class Engine {
   }
 
   /** Bring every media element in line with the timeline at time `t`. */
-  private sync(t: number, playing: boolean) {
+  private sync(t: number, playing: boolean, dtMs = 0) {
     const { project, assets } = useEditor.getState();
     const fps = project.settings.fps;
     const live = new Set<string>();
     const layers = activeLayers(project, t);
+    let led = false;
 
     for (const layer of layers) {
       const { clip, track } = layer;
@@ -265,9 +371,26 @@ class Engine {
       if (running) {
         const rate = clamp(rawRate, 0.0625, 16);
         if (Math.abs(el.playbackRate - rate) > 0.01) el.playbackRate = rate;
+        // The first playing video leads: the clock follows it, rather than the video being forced
+        // to follow the clock. Seeking a video that has fallen behind makes it stall and fall
+        // further behind, which is what made playback stutter on phones.
+        const leads = !led && clip.kind === 'video' && layer.transition?.role !== 'out';
+        if (leads) led = true;
         if (el.paused) {
           if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target;
           void el.play().catch(() => {});
+          if (leads) this.holdClock(t, dtMs);
+        } else if (leads) {
+          const drift = el.currentTime - target;
+          if (Math.abs(drift) > 1.5 * Math.max(1, rate)) {
+            el.currentTime = target;
+          } else if (el.seeking) {
+            this.holdClock(t, dtMs);
+          } else {
+            this.stallMs = 0;
+            // Ease the clock toward the video so the timeline never jumps.
+            if (Math.abs(drift) > 0.03) this.clockStartTime += (drift / rate) * 0.2;
+          }
         } else if (Math.abs(el.currentTime - target) > 0.25 * Math.max(1, rate)) {
           el.currentTime = target;
         }
@@ -307,6 +430,8 @@ class Engine {
 
   private loop = (now: number) => {
     requestAnimationFrame(this.loop);
+    const dtMs = this.lastLoop ? Math.min(100, now - this.lastLoop) : 0;
+    this.lastLoop = now;
     const state = useEditor.getState();
     let t = state.currentTime;
     if (state.playing) {
@@ -324,13 +449,33 @@ class Engine {
       }
     }
     const playing = useEditor.getState().playing;
-    this.sync(t, playing);
+    const project = useEditor.getState().project;
+    // Clips end exactly at the timeline's end, so the very end would show an empty canvas.
+    // Hold the last frame there instead, as players do.
+    const end = projectDuration(project);
+    const shown = !this.exportCtx && end > 0 && t >= end ? Math.max(0, end - 0.5 / project.settings.fps) : t;
+    this.sync(shown, playing, dtMs);
     if (!playing && !this.exportCtx && this.dirtyFrames <= 0) return;
     this.dirtyFrames--;
-    const project = useEditor.getState().project;
     if (this.preview) {
       const ctx = this.preview.getContext('2d');
-      if (ctx) this.boxes = renderFrame(ctx, project, t, { getSource: this.getSource });
+      const direct = this.directCandidate(shown);
+      let placed: MediaEntry | null = null;
+      if (ctx) {
+        this.boxes = renderFrame(ctx, project, shown, {
+          getSource: this.getSource,
+          direct: direct
+            ? {
+                clipId: direct.clipId,
+                place: (p) => {
+                  this.placeDirect(direct.entry, p);
+                  placed = direct.entry;
+                },
+              }
+            : undefined,
+        });
+      }
+      if (!placed) this.hideDirect();
     }
     if (this.exportCtx) renderFrame(this.exportCtx, project, t, { getSource: this.getSource });
     for (const fn of this.listeners) fn(this.boxes);
@@ -421,3 +566,10 @@ class Engine {
 
 export const engine = new Engine();
 export { Engine };
+
+/** Writes inline styles only when they change, to avoid needless style work every frame. */
+function setStyle(el: HTMLElement, styles: Partial<Record<'display' | 'left' | 'top' | 'width' | 'height' | 'transform' | 'transformOrigin' | 'opacity' | 'filter', string>>) {
+  for (const [k, v] of Object.entries(styles) as [keyof typeof styles, string][]) {
+    if (el.style[k] !== v) el.style[k] = v;
+  }
+}

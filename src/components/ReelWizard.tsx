@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildReelFromWizard, findHighlightsIn, importFiles, stopPreviewSound, togglePreviewSound } from '../actions';
 import { highlightKey, useHighlights } from '../ai/highlightState';
+import { LIBRARY_MUSIC } from '../audio/library';
 import { MUSIC, trackLength } from '../audio/synth';
 import { drawGraphic } from '../engine/graphics';
 import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
@@ -230,7 +231,7 @@ export function ReelWizard() {
         <footer className="wiz-foot">
           <span className="wiz-summary">
             {meta.title} · {meta.roster === 'intros' ? `${starters} starter${starters === 1 ? '' : 's'}` : `${clips.length} clip${clips.length === 1 ? '' : 's'}`}
-            {musicId ? ` · ${musicId.startsWith('asset:') ? (assets[musicId.slice(6)]?.name.replace(/\.[^.]+$/, '') ?? 'Your song') : MUSIC.find((m) => m.id === musicId)?.title}` : ''}
+            {musicId ? ` · ${musicId.startsWith('asset:') ? (assets[musicId.slice(6)]?.name.replace(/\.[^.]+$/, '') ?? 'Your song') : (LIBRARY_MUSIC.find((m) => m.id === musicId) ?? MUSIC.find((m) => m.id === musicId))?.title}` : ''}
           </span>
           <div className="wiz-actions">
             {idx > 0 && (
@@ -1217,42 +1218,46 @@ function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; set
   const [playing, setPlaying] = useState<string | null>(null);
   const recommended = REEL_STYLES.find((s) => s.id === style)!.music;
   useEffect(() => stopPreviewSound, []);
+  const pick = (id: string, title: string, sub: string, colors: [string, string]) => (
+    <div key={id} className={`music-pick ${musicId === id ? 'on' : ''}`}>
+      <button
+        className="music-art"
+        style={{ background: `linear-gradient(135deg, ${colors[0]}, ${colors[1]})` }}
+        aria-label={playing === id ? `Stop ${title}` : `Preview ${title}`}
+        onClick={async () => setPlaying((await togglePreviewSound('music', id)) ? id : null)}
+      >
+        <Icon name={playing === id ? 'pause' : 'play'} size={18} />
+      </button>
+      <button className="music-choose" onClick={() => setMusicId(id)}>
+        <strong>
+          {title} {id === recommended && <em>Recommended</em>}
+        </strong>
+        <small>{sub}</small>
+      </button>
+    </div>
+  );
+  const generated = MUSIC.some((m) => m.id === musicId);
   return (
     <section className="wiz-step">
       <h3 className="wiz-title">Set the tempo</h3>
-      <p className="wiz-lede">{style === 'hype' ? 'Cuts lock to the beat of the track you pick.' : 'Royalty-free, safe to post anywhere.'}</p>
+      <p className="wiz-lede">{style === 'hype' || style === 'team' || style === 'lineup' ? 'Cuts lock to the beat of the track you pick. ' : ''}Studio recordings, free to post anywhere.</p>
       <div className="music-picks">
-        {MUSIC.map((m) => (
-          <div key={m.id} className={`music-pick ${musicId === m.id ? 'on' : ''}`}>
-            <button
-              className="music-art"
-              style={{ background: `linear-gradient(135deg, ${m.colors[0]}, ${m.colors[1]})` }}
-              aria-label={playing === m.id ? `Stop ${m.title}` : `Preview ${m.title}`}
-              onClick={async () => setPlaying((await togglePreviewSound('music', m.id)) ? m.id : null)}
-            >
-              <Icon name={playing === m.id ? 'pause' : 'play'} size={18} />
-            </button>
-            <button className="music-choose" onClick={() => setMusicId(m.id)}>
-              <strong>
-                {m.title} {m.id === recommended && <em>Recommended</em>}
-              </strong>
-              <small>
-                {m.mood} · {m.bpm} BPM · {formatDuration(trackLength(m).seconds)}
-              </small>
-            </button>
-          </div>
-        ))}
+        {LIBRARY_MUSIC.map((m) => pick(m.id, m.title, `${m.mood} · ${m.bpm} BPM · ${m.artist}`, m.colors))}
         <button className={`music-none ${musicId === null ? 'on' : ''}`} onClick={() => setMusicId(null)}>
           No music
         </button>
       </div>
+      <details className="more-music" open={generated}>
+        <summary>Generated beats</summary>
+        <div className="music-picks">{MUSIC.map((m) => pick(m.id, m.title, `${m.mood} · ${m.bpm} BPM · ${formatDuration(trackLength(m).seconds)}`, m.colors))}</div>
+      </details>
       <OwnSongs musicId={musicId} setMusicId={setMusicId} />
     </section>
   );
 }
 
 /** Generated sound files the app made itself, which aren't the user's songs. */
-const GENERATED = /^(Whoosh|Impact)\.wav$|\(\d+ BPM\)\.wav$/;
+const GENERATED = /^(Whoosh|Impact|Slam|Crowd cheer)\.(wav|mp3)$|\(\d+ BPM\)\.(wav|mp3)$/;
 
 /** Your own music: any song on the device, cut to its beat. */
 function OwnSongs({ musicId, setMusicId }: { musicId: string | null; setMusicId: (id: string | null) => void }) {

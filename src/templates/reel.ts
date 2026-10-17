@@ -24,7 +24,7 @@ export const REEL_STYLES: {
     title: 'Recruiting reel',
     blurb: 'Clean 16:9 cut for college coaches: profile card, player spotlights, skill labels, stats and contact info.',
     aspect: [1920, 1080],
-    music: 'showcase',
+    music: 'determined-pursuit',
     subject: 'player',
     spotlight: true,
   },
@@ -33,7 +33,7 @@ export const REEL_STYLES: {
     title: 'Hype reel',
     blurb: 'Vertical 9:16 for TikTok and Reels: beat-synced cuts, slow-mo on the hit, flashes and whooshes.',
     aspect: [1080, 1920],
-    music: 'spike-anthem',
+    music: 'lucid-trigger',
     subject: 'player',
     spotlight: true,
   },
@@ -42,7 +42,7 @@ export const REEL_STYLES: {
     title: 'Player spotlight',
     blurb: 'Square-ish 4:5 for the Instagram feed: Player of the Game, Senior Night or Athlete of the Week. Every play rings your player.',
     aspect: [1080, 1350],
-    music: 'game-day',
+    music: 'warped',
     subject: 'player',
     spotlight: true,
   },
@@ -51,7 +51,7 @@ export const REEL_STYLES: {
     title: 'Team reel',
     blurb: 'Vertical 9:16 for the team account: roster card, beat-synced plays credited to each player, team stats and a send-off.',
     aspect: [1080, 1920],
-    music: 'spike-anthem',
+    music: 'hyper-ultra-racing',
     subject: 'team',
     roster: 'credits',
   },
@@ -60,7 +60,7 @@ export const REEL_STYLES: {
     title: 'Starting lineup',
     blurb: 'Pre-game hype in 9:16: each starter gets a beat-timed reveal with number, name and position over their photo or clip.',
     aspect: [1080, 1920],
-    music: 'spike-anthem',
+    music: 'doomed',
     subject: 'team',
     roster: 'intros',
   },
@@ -69,7 +69,7 @@ export const REEL_STYLES: {
     title: 'Season recap',
     blurb: 'Team-focused 16:9 montage: season title, best rallies with smooth dissolves, team stats and a send-off.',
     aspect: [1920, 1080],
-    music: 'victory-lap',
+    music: 'great-mission',
     subject: 'team',
   },
 ];
@@ -150,6 +150,8 @@ export interface ReelAssets {
   music?: string;
   whoosh?: string;
   impact?: string;
+  /** Crowd cheer under the final score and send-off. */
+  crowd?: string;
   /** Photos or clips by roster key. */
   players?: Record<string, string>;
   logo?: string;

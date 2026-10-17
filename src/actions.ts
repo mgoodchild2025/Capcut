@@ -703,6 +703,14 @@ function renderSound(kind: 'music' | 'sfx', id: string, preview = false) {
   let p = soundCache.get(key);
   if (!p) {
     p = (async () => {
+      // Recorded sounds win over the built-in synthesiser's.
+      const lib = await import('./audio/library');
+      const recorded = kind === 'music' ? lib.libraryTrack(id) : lib.librarySfx(id);
+      if (recorded) {
+        const blob = await lib.fetchLibrarySound(kind, id);
+        const t = kind === 'music' ? lib.libraryTrack(id) : undefined;
+        return { blob, beats: t?.beats, bpm: t?.bpm };
+      }
       const synth = await import('./audio/synth');
       const { encodeWav } = await import('./audio/wav');
       if (kind === 'music') {
@@ -717,6 +725,26 @@ function renderSound(kind: 'music' | 'sfx', id: string, preview = false) {
     soundCache.set(key, p);
   }
   return p;
+}
+
+/** What a library sound is called once it's in the project: "Title (120 BPM).mp3", "Whoosh.mp3". */
+async function soundName(kind: 'music' | 'sfx', id: string): Promise<string> {
+  const lib = await import('./audio/library');
+  if (kind === 'music') {
+    const t = lib.libraryTrack(id);
+    if (t) return `${t.title} (${t.bpm} BPM).mp3`;
+    const m = (await import('./audio/synth')).MUSIC.find((x) => x.id === id)!;
+    return `${m.title} (${m.bpm} BPM).wav`;
+  }
+  const r = lib.librarySfx(id);
+  if (r) return `${r.title}.mp3`;
+  return `${(await import('./audio/synth')).SFX.find((x) => x.id === id)!.title}.wav`;
+}
+
+/** Title of a library track, recorded or generated. */
+async function trackTitle(id: string): Promise<string> {
+  const t = (await import('./audio/library')).libraryTrack(id);
+  return t?.title ?? (await import('./audio/synth')).MUSIC.find((m) => m.id === id)!.title;
 }
 
 let previewAudio: HTMLAudioElement | null = null;
@@ -761,10 +789,8 @@ export function stopPreviewSound() {
 export async function addMusic(id: string): Promise<void> {
   stopPreviewSound();
   await runTask('Preparing music', async () => {
-    const { MUSIC } = await import('./audio/synth');
-    const track = MUSIC.find((m) => m.id === id)!;
     const { blob, beats, bpm } = await renderSound('music', id);
-    const asset = await importBlob(blob, `${track.title} (${track.bpm} BPM).wav`);
+    const asset = await importBlob(blob, await soundName('music', id));
     if (!asset) return;
     patchAsset(asset.id, { beats, bpm });
     const clip = createMediaClip(asset);
@@ -776,20 +802,19 @@ export async function addMusic(id: string): Promise<void> {
     clip.volume = 0.8;
     edit((p) => placeClip(p, { ...clip, start: 0 }));
     select(clip.id);
-    toast(`Added "${track.title}"`);
+    toast(`Added "${await trackTitle(id)}"`);
   });
 }
 
 export async function addSfx(id: string): Promise<void> {
   stopPreviewSound();
-  const { SFX } = await import('./audio/synth');
-  const sfx = SFX.find((x) => x.id === id)!;
   const { blob } = await renderSound('sfx', id);
-  const asset = await importBlob(blob, `${sfx.title}.wav`);
+  const name = await soundName('sfx', id);
+  const asset = await importBlob(blob, name);
   if (!asset) return;
   const clip = { ...createMediaClip(asset), start: get().currentTime };
   edit((p) => placeClip(p, clip));
-  toast(`Added "${sfx.title}" at the playhead`);
+  toast(`Added "${name.replace(/\.\w+$/, '')}" at the playhead`);
 }
 
 /** Beat times on the timeline for an audio-bearing clip whose asset has beats. */
@@ -1055,21 +1080,21 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
       }
       report(++step / steps);
     } else if (w.musicId) {
-      const { MUSIC } = await import('./audio/synth');
-      const track = MUSIC.find((m) => m.id === w.musicId)!;
       const { blob, beats, bpm } = await renderSound('music', w.musicId);
-      music = await importBlob(blob, `${track.title} (${track.bpm} BPM).wav`);
+      music = await importBlob(blob, await soundName('music', w.musicId));
       if (music) {
         patchAsset(music.id, { beats, bpm });
         music = get().assets[music.id];
       }
       report(++step / steps);
     }
-    const sfx = async (id: string, name: string) => importBlob((await renderSound('sfx', id)).blob, name);
-    const whoosh = await sfx('whoosh', 'Whoosh.wav');
+    const sfx = async (id: string) => importBlob((await renderSound('sfx', id)).blob, await soundName('sfx', id));
+    const whoosh = await sfx('whoosh');
     report(++step / steps);
-    const impact = await sfx('impact', 'Impact.wav');
+    const impact = await sfx('impact');
     report(++step / steps);
+    // The crowd under the final score and the send-off.
+    const crowd = await sfx('crowd').catch(() => null);
 
     const clips = w.clips.slice();
     for (const [c, i] of toTrack) {
@@ -1101,6 +1126,7 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
         music: music?.id,
         whoosh: whoosh?.id,
         impact: impact?.id,
+        crowd: crowd?.id,
         logo: logo?.id,
         oppLogo: oppLogo?.id,
         photo: photo ? finalId(photo.assetId) : undefined,

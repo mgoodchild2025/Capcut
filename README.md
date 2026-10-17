@@ -76,6 +76,8 @@ npm run build    # type-check and production build into dist/
 
 Use a recent Chrome or Edge for the widest codec support. Firefox and Safari work, with fewer export codecs.
 
+**iPhone videos (HEVC `.mov`)** import in any browser. When the browser can play the clip, it is used as is. When it can't, ClipForge converts a copy on import, showing progress with a Cancel button: first with hardware decoding through WebCodecs, otherwise with ffmpeg compiled to WebAssembly (`@ffmpeg/core`, served from the app itself and loaded only when needed). The converted copy is what gets saved with the draft, so a clip is only converted once.
+
 ## Architecture
 
 ```

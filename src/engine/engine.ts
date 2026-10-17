@@ -169,6 +169,20 @@ class Engine {
     el.src = asset.url;
     el.addEventListener('seeked', this.invalidate);
     el.addEventListener('loadeddata', this.invalidate);
+    // iOS Safari loads no frames until a video has played, so a paused preview would stay blank.
+    el.addEventListener(
+      'loadedmetadata',
+      () => {
+        if (el.readyState >= 2 || !el.paused || this.playing) return;
+        el.play()
+          .then(() => {
+            if (!this.playing) el.pause();
+            this.invalidate();
+          })
+          .catch(() => {});
+      },
+      { once: true },
+    );
     entry = { el, assetId: asset.id };
     this.media.set(clip.id, entry);
     this.route(entry);

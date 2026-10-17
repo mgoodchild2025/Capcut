@@ -17,11 +17,15 @@ A CapCut-style video editor that runs entirely in the browser, with a built-in w
    | Starting lineup | 9:16 | Pre-game hype: each starter's number, name and position over their photo, clip or a number card |
    | Season recap | 16:9 | Team montage with record, stats and a send-off |
 
+   Add your **team logo** once (it's remembered): it goes on title and closing cards, and as a corner badge during plays.
+   Optionally enter the **match score**: the opponent and set scores add a **Final** card, and a score per play (e.g. `18-21`, set 2) shows a live score bug.
+
    Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one. The roster is remembered for next time.
 2. Enter the player or team details and pick team colours. The title card previews live, and details are remembered for next time.
 3. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. It then ranks the best rallies, each framed from serve to end whistle. Pick plays from the AI results or use whole clips, then add skill labels (Kill, Ace, Block...) and reorder them.
-4. Tap your player in each play to place a **spotlight**. The reel freezes that frame, dims the surroundings and rings the player.
-5. Choose a music track and press **Build my reel**. You get a complete, editable timeline:
+4. Vertical and 4:5 reels **auto-follow the action**: on-device motion tracking pans wide game footage to keep the play in frame. **Auto reframe** in the clip tools does the same for any clip in the editor.
+5. Tap your player in each play to place a **spotlight**. The reel freezes that frame, dims the surroundings and rings the player.
+6. Choose a music track and press **Build my reel**. You get a complete, editable timeline:
    - Title, profile, stats and outro cards painted in your team colours.
    - Spotlights, skill labels and a corner name tag.
    - Transitions and music.
@@ -59,6 +63,7 @@ The Volleyball tab also has text presets (KILL!, ACE!, BLOCK!, DIG!, name and sc
   - Voiceover recording and AI text-to-speech.
   - Beat detection with bar markers, and **Sync cuts to the beat**.
 - **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing. On phones, **Save to Photos** / **Share** hands the video to the share sheet.
+- **Move projects between devices**: the share icon on a draft saves it as one `.clipforge` file with all its media (AirDrop or Files on iPhone). **Open a project file** on the home screen loads it on another device.
 - **Install as an app**: Add to Home Screen (on iPhone: Share, then Add to Home Screen) for a full-screen app that also works offline.
 
 ## AI that runs on your device
@@ -67,6 +72,7 @@ The Volleyball tab also has text presets (KILL!, ACE!, BLOCK!, DIG!, name and sc
 | --- | --- |
 | Highlight finder | Signal analysis of audio (whistle tones, crowd level) and video motion. No download. |
 | Beat detection | Onset envelope plus tempo and phase grid search. No download. |
+| Auto-follow reframing | Motion tracking on tiny frames, smoothed into a camera path. No download. |
 | Captions | Whisper base (Transformers.js, WebGPU or WASM). Downloads about 80 to 150 MB on first use. |
 | Background removal | MODNet (Transformers.js). Downloads about 25 MB on first use. |
 | Text to speech | Supertonic or MMS-TTS (Transformers.js). Downloads a voice model on first use. |

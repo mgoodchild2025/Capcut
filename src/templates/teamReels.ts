@@ -6,7 +6,8 @@ import type { Asset, Clip, Project, TransitionKind } from '../model/types';
 import { uid } from '../utils';
 import type { ReelInput, RosterPlayer } from './reel';
 import { REEL_STYLES } from './reel';
-import { barFitter, card, IMPACT, jersey, reframe, SANS, text, upper } from './shared';
+import { appendFinalScore } from './match';
+import { barFitter, card, follow, IMPACT, jersey, reframe, SANS, text, upper } from './shared';
 
 /** Common set-up for the three newer styles: canvas, music grid and the overlay list. */
 function begin(input: ReelInput, assets: Record<string, Asset>, title: string) {
@@ -106,8 +107,10 @@ export function buildSpotlightReel(input: ReelInput, assets: Record<string, Asse
       clip.duration += hold;
       clip.spotlight = { x: rc.spotlight!.x, y: rc.spotlight!.y, r: 0.11, color: c2, label: num || upper(name.split(' ')[0]), zoom: true };
     }
-    // Wide footage fills the 4:5 frame when we know where the player is; otherwise it's letterboxed.
+    // Wide footage fills the 4:5 frame when we know where the player is or where the action goes;
+    // otherwise it's letterboxed.
     if (rc.spotlight) clip = reframe(clip, a, W, H, rc.spotlight.x);
+    else if (rc.track) clip = follow(clip, a, W, H, rc.track);
     clip.transition = transitions[i % transitions.length];
     clip.transitionDur = 0.35;
     const start = lastEnd(p);
@@ -136,6 +139,8 @@ export function buildSpotlightReel(input: ReelInput, assets: Record<string, Asse
       text(stats.map(([k, v]) => `${v.padStart(width, ' ')}  ${k.toUpperCase()}`).join('\n'), start + 0.5, d - 0.5, { fontFamily: '"Courier New", monospace', fontSize: stats.length <= 3 ? 84 : 70, color: '#ffffff', align: 'left', bold: true }, 0, 0.04, { animIn: 'fade', animInDur: 0.5 }),
     );
   }
+
+  p = appendFinalScore(p, overlays, input, assets, { duration: 3.6, transition: 'dissolve', portrait: true });
 
   // Send-off.
   {
@@ -206,6 +211,7 @@ export function buildTeamReel(input: ReelInput, assets: Record<string, Asset>): 
     let clip = made.clip;
     clip.duration = fit(clip.duration, a.kind === 'image' ? Infinity : durationForSpan(clip, made.available));
     clip = reframe(clip, a, W, H, rc.spotlight?.x ?? 0.5);
+    if (!rc.spotlight) clip = follow(clip, a, W, H, rc.track);
     clip.transition = transitions[i % transitions.length];
     clip.transitionDur = Math.min(0.3, beat || 0.3);
     const start = lastEnd(p);
@@ -235,6 +241,8 @@ export function buildTeamReel(input: ReelInput, assets: Record<string, Asset>): 
       text(stats.map(([k, v]) => `${v.padStart(width, ' ')}  ${k.toUpperCase()}`).join('\n'), start + 0.5, d - 0.5, { fontFamily: '"Courier New", monospace', fontSize: stats.length <= 3 ? 86 : 70, color: '#ffffff', align: 'left', bold: true }, 0, 0.02, { animIn: 'fade', animInDur: 0.5 }),
     );
   }
+
+  p = appendFinalScore(p, overlays, input, assets, { duration: fit(3.6), transition: 'flash', portrait: true });
 
   // We are...
   {

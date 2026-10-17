@@ -127,6 +127,8 @@ export interface Keyframe {
   /** Seconds from the clip's start on the timeline. */
   t: number;
   v: number;
+  /** How to move from this keyframe to the next: eased (default) or at a steady rate (camera paths). */
+  ease?: 'linear';
 }
 
 export interface Crop {

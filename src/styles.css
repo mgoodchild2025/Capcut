@@ -229,6 +229,15 @@ button:disabled {
   text-align: center;
 }
 
+.open-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  margin-top: 14px;
+  cursor: pointer;
+}
+
 .home-top {
   display: flex;
   align-items: center;
@@ -3289,6 +3298,137 @@ input[type='range']::-moz-range-thumb {
 .lineup-selects select {
   flex: 1;
   min-width: 0;
+}
+
+.lineup-selects.score-inputs select {
+  flex: 0 0 64px;
+}
+
+.score-inputs input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 11.5px;
+}
+
+.follow-toggle {
+  align-items: flex-start;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.follow-toggle input {
+  margin-top: 3px;
+}
+
+.follow-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.follow-toggle small {
+  color: var(--text-2);
+  line-height: 1.35;
+}
+
+.logo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-drop {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  background: repeating-conic-gradient(rgba(255, 255, 255, 0.06) 0 25%, transparent 0 50%) 0 0 / 14px 14px;
+  color: var(--text-2);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.logo-drop img {
+  max-width: 86%;
+  max-height: 86%;
+  object-fit: contain;
+}
+
+.logo-opts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.match-row {
+  display: grid;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.set-scores {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.set-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.set-score small {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.set-score input {
+  width: 40px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  text-align: center;
+  font-weight: 700;
+}
+
+.match-hint {
+  display: block;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .match-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---------- roster step ---------- */

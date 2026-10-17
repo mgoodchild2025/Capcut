@@ -36,7 +36,27 @@ const BLANK: ReelInfo = {
   headline: HEADLINES[0],
   opponent: '',
   roster: [],
+  sets: [],
+  badge: true,
 };
+
+/** Shrinks an uploaded logo to at most 512px and keeps its transparency. */
+async function logoDataUrl(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const k = Math.min(1, 512 / Math.max(img.naturalWidth || 512, img.naturalHeight || 512));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((img.naturalWidth || 512) * k));
+    c.height = Math.max(1, Math.round((img.naturalHeight || 512) * k));
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 const styleOf = (id: ReelStyle) => REEL_STYLES.find((s) => s.id === id)!;
 
@@ -80,6 +100,7 @@ export function ReelWizard() {
   const [musicId, setMusicId] = useState<string | null>(REEL_STYLES.find((s) => s.id === (preset?.style ?? 'recruiting'))!.music);
   const [step, setStep] = useState<Step>(preset?.style ? 'player' : 'style');
   const [building, setBuilding] = useState(false);
+  const [follow, setFollow] = useState(true);
 
   const meta = styleOf(style);
   const team = meta.subject === 'team';
@@ -127,8 +148,9 @@ export function ReelWizard() {
     const ok = await buildReelFromWizard({
       style,
       info,
-      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player }) => ({ assetId, inPoint, duration, tag, spotlight, player })),
+      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player, score, set }) => ({ assetId, inPoint, duration, tag, spotlight, player, score, set })),
       musicId,
+      follow,
     });
     setBuilding(false);
     if (ok) close();
@@ -163,7 +185,16 @@ export function ReelWizard() {
           {step === 'style' && <StylePicker style={style} onPick={pickStyle} colors={info.colors} />}
           {step === 'player' && <PlayerForm info={info} setInfo={setInfo} style={style} />}
           {step === 'roster' && <RosterStep info={info} setInfo={setInfo} lineup={meta.roster === 'intros'} assets={assets} />}
-          {step === 'clips' && <ClipPicker clips={clips} setClips={setClips} assets={assets} roster={meta.roster === 'credits' ? info.roster : null} />}
+          {step === 'clips' && (
+            <ClipPicker
+              clips={clips}
+              setClips={setClips}
+              assets={assets}
+              roster={meta.roster === 'credits' ? info.roster : null}
+              scoring={!!info.opponent.trim() || info.sets.length > 0}
+              follow={meta.aspect[0] < meta.aspect[1] || meta.aspect[0] * 5 === meta.aspect[1] * 4 ? { on: follow, set: setFollow } : null}
+            />
+          )}
           {step === 'spotlight' && <SpotlightStep clips={clips} setClips={setClips} color={info.colors[1]} />}
           {step === 'music' && <MusicStep musicId={musicId} setMusicId={setMusicId} style={style} />}
         </div>
@@ -240,10 +271,12 @@ function CardPreview({
   sub,
   kicker,
   number,
+  logo,
 }: {
   colors: [string, string];
   variant: CardVariant;
   number?: string;
+  logo?: string;
   width: number;
   height: number;
   name?: string;
@@ -283,7 +316,16 @@ function CardPreview({
         ctx.fillText(sub.toUpperCase(), x, y + S * 0.14);
       }
     }
-  }, [colors, variant, width, height, name, sub, kicker, number]);
+    if (logo) {
+      const img = new Image();
+      img.onload = () => {
+        const S = Math.min(c.width, c.height);
+        const k = Math.min((S * 0.15) / img.height, (S * 0.32) / img.width);
+        ctx.drawImage(img, S * 0.045, S * 0.045, img.width * k, img.height * k);
+      };
+      img.src = logo;
+    }
+  }, [colors, variant, width, height, name, sub, kicker, number, logo]);
   return <canvas ref={ref} className="card-preview" aria-hidden="true" />;
 }
 
@@ -376,6 +418,72 @@ function PlayerForm({ info, setInfo, style }: { info: ReelInfo; setInfo: (f: (i:
           </label>
         </div>
 
+        <h4 className="wiz-sub">
+          Team logo <small>optional, remembered</small>
+        </h4>
+        <div className="logo-row">
+          <label className="logo-drop" title={info.logo ? 'Change logo' : 'Upload logo'}>
+            {info.logo ? <img src={info.logo} alt="Team logo" /> : <Icon name="upload" />}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (f) set({ logo: await logoDataUrl(f).catch(() => undefined) });
+              }}
+            />
+          </label>
+          {info.logo ? (
+            <div className="logo-opts">
+              <label className="check">
+                <input type="checkbox" checked={info.badge} onChange={(e) => set({ badge: e.target.checked })} /> Corner badge during plays
+              </label>
+              <button className="link-btn" onClick={() => set({ logo: undefined })}>
+                Remove logo
+              </button>
+            </div>
+          ) : (
+            <small className="muted">Shown on the title and closing cards, and as a small badge during plays. PNG with a transparent background looks best.</small>
+          )}
+        </div>
+
+        {style !== 'lineup' && (
+          <>
+            <h4 className="wiz-sub">
+              Match score <small>optional</small>
+            </h4>
+            <div className="match-row">
+              <label className="wiz-field">
+                <span>Opponent</span>
+                <input value={info.opponent} placeholder="Westside Storm" onChange={(e) => set({ opponent: e.target.value })} />
+              </label>
+              <div className="set-scores">
+                {info.sets.map(([a, b], i) => (
+                  <span key={i} className="set-score">
+                    <small>Set {i + 1}</small>
+                    <input aria-label={`Set ${i + 1} our score`} inputMode="numeric" value={a} placeholder="25" onChange={(e) => setInfo((x) => ({ ...x, sets: x.sets.map((r, j) => (j === i ? [e.target.value, r[1]] : r)) }))} />
+                    <b>–</b>
+                    <input aria-label={`Set ${i + 1} their score`} inputMode="numeric" value={b} placeholder="21" onChange={(e) => setInfo((x) => ({ ...x, sets: x.sets.map((r, j) => (j === i ? [r[0], e.target.value] : r)) }))} />
+                    <button className="mini" aria-label={`Remove set ${i + 1}`} onClick={() => setInfo((x) => ({ ...x, sets: x.sets.filter((_, j) => j !== i) }))}>
+                      <Icon name="close" size={12} />
+                    </button>
+                  </span>
+                ))}
+                {info.sets.length < 5 && (
+                  <button className="link-btn" onClick={() => setInfo((x) => ({ ...x, sets: [...x.sets, ['', '']] }))}>
+                    + Add set
+                  </button>
+                )}
+              </div>
+            </div>
+            <small className="muted match-hint">
+              Set scores add a Final card. Add each play's score on the next step for a live score bug ({team ? info.name || 'your team' : info.club || 'your club'} vs {info.opponent || 'opponent'}).
+            </small>
+          </>
+        )}
+
         {style !== 'lineup' && (
           <>
         <h4 className="wiz-sub">{team ? 'Team stats' : style === 'spotlight' ? 'Stats' : 'Season stats'} <small>optional</small></h4>
@@ -411,6 +519,7 @@ function PlayerForm({ info, setInfo, style }: { info: ReelInfo; setInfo: (f: (i:
           colors={info.colors}
           variant={style === 'spotlight' ? 'player' : 'intro'}
           number={info.number}
+          logo={info.logo}
           width={aspect[0]}
           height={aspect[1]}
           name={info.name || (team ? 'Team name' : 'Player name')}
@@ -611,12 +720,18 @@ function ClipPicker({
   setClips,
   assets,
   roster,
+  scoring,
+  follow,
 }: {
   clips: WClip[];
   setClips: (f: (c: WClip[]) => WClip[]) => void;
   assets: ReturnType<typeof useEditor.getState>['assets'];
   /** Credit plays to these players (team reels). */
   roster: RosterPlayer[] | null;
+  /** Ask for each play's score. */
+  scoring: boolean;
+  /** Auto-follow switch, for styles narrower than game footage. */
+  follow: { on: boolean; set: (v: boolean) => void } | null;
 }) {
   const named = roster?.filter((r) => r.name.trim() || r.number.trim()) ?? [];
   const byAsset = useHighlights((s) => s.byAsset);
@@ -703,6 +818,15 @@ function ClipPicker({
         <h4 className="wiz-sub">
           Lineup <small>{clips.length ? `${clips.length} · ${formatDuration(clips.reduce((s, c) => s + c.duration, 0))}` : 'tap plays to add'}</small>
         </h4>
+        {follow && (
+          <label className="check follow-toggle">
+            <input type="checkbox" checked={follow.on} onChange={(e) => follow.set(e.target.checked)} />
+            <span>
+              <strong>Auto-follow the action</strong>
+              <small>Pans wide game footage to keep the play in the frame. Plays where you spot your player stay centred on them.</small>
+            </span>
+          </label>
+        )}
         <ol>
           {clips.map((c, i) => (
             <li key={c.key}>
@@ -728,6 +852,25 @@ function ClipPicker({
                     ))}
                   </select>
                 </span>
+                {scoring && (
+                  <span className="lineup-selects score-inputs">
+                    <select value={c.set ?? ''} onChange={(e) => setClips((list) => list.map((x) => (x.key === c.key ? { ...x, set: e.target.value ? Number(e.target.value) : undefined } : x)))} aria-label="Set">
+                      <option value="">Set</option>
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <option key={n} value={n}>
+                          Set {n}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      aria-label="Score after this play"
+                      placeholder="Score, e.g. 18-21"
+                      inputMode="numeric"
+                      value={c.score ?? ''}
+                      onChange={(e) => setClips((list) => list.map((x) => (x.key === c.key ? { ...x, score: e.target.value || undefined } : x)))}
+                    />
+                  </span>
+                )}
               </span>
               <span className="lineup-btns">
                 <button className="mini" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">

@@ -3,6 +3,7 @@ import {
   copySelectedStyle,
   DEFAULT_SPOTLIGHT,
   detachAudioSelected,
+  autoReframeSelected,
   freezeFrameSelected,
   hasCopiedStyle,
   importFiles,
@@ -34,12 +35,18 @@ export function QuickActions({ clip }: { clip: Clip }) {
   const busy = useEditor((s) => !!s.task);
   const isVideo = clip.kind === 'video';
   const media = clip.kind === 'video' || clip.kind === 'image' || clip.kind === 'audio';
+  // Footage wider than the project (landscape into vertical) can follow the action.
+  const wide = useEditor((s) => {
+    const a = clip.assetId ? s.assets[clip.assetId] : undefined;
+    return !!a && !!a.width && a.width / a.height > (s.project.settings.width / s.project.settings.height) * 1.1;
+  });
   return (
     <div className="quick-actions" role="toolbar" aria-label="Clip actions">
       {media && <ActionButton icon="swap" label="Replace" onClick={() => setReplacing(true)} />}
       {isVideo && <ActionButton icon="freeze" label="Freeze" disabled={busy} onClick={() => void freezeFrameSelected()} />}
       {isVideo && <ActionButton icon="reverse" label="Reverse" disabled={busy} onClick={() => void reverseSelected()} />}
       {isVideo && <ActionButton icon="detach" label="Extract audio" onClick={detachAudioSelected} />}
+      {isVideo && wide && <ActionButton icon="target" label="Auto reframe" disabled={busy} onClick={() => void autoReframeSelected()} />}
       {clip.kind === 'image' && <ActionButton icon="sparkle" label="Remove BG" disabled={busy} onClick={() => void removeBackgroundSelected()} />}
       <ActionButton icon="copy" label="Copy style" onClick={copySelectedStyle} />
       <ActionButton icon="paste" label="Paste style" disabled={!hasCopiedStyle()} onClick={pasteSelectedStyle} />

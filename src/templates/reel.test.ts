@@ -30,6 +30,8 @@ const assets: Record<string, Asset> = {
   photo: asset('photo', 'image', Infinity, { width: 1080, height: 1350 }),
   n4: asset('n4', 'image', Infinity),
   self: asset('self', 'image', Infinity),
+  logo: asset('logo', 'image', Infinity, { width: 400, height: 200 }),
+  final: asset('final', 'image', Infinity),
 };
 
 const info: ReelInfo = {
@@ -57,6 +59,8 @@ const info: ReelInfo = {
     { key: 'r3', number: '9', name: 'Ava Chen', position: 'Libero', starter: false },
     { key: 'r4', number: '7', name: 'Mia Ortiz', position: 'Middle Blocker', starter: true, assetId: 'game2' },
   ],
+  sets: [],
+  badge: true,
 };
 
 const input = (style: ReelInput['style']): ReelInput => ({
@@ -187,5 +191,67 @@ describe('highlight reel builder', () => {
     expect(t.some((x) => /AVA/.test(x))).toBe(false);
     expect(t).toContain('ROCKETS!');
     expect(p.clips.filter((c) => c.assetId === 'whoosh').length).toBe(main.length - 1);
+  });
+
+  it('puts the team logo on title cards and a corner badge across the plays', () => {
+    for (const style of ['recruiting', 'hype', 'spotlight', 'team', 'lineup', 'recap'] as const) {
+      const base = input(style);
+      const p = buildReel({ ...base, cards: { ...base.cards, logo: 'logo' } }, assets);
+      const logos = p.clips.filter((c) => c.assetId === 'logo');
+      const main = trackClips(p, getMainTrack(p).id);
+      const titles = main.filter((c) => ['intro', 'outro', 'roster', 'self', 'n4'].includes(c.assetId!));
+      // One per title card plus one badge.
+      expect(logos.length).toBe(titles.length + 1);
+      const W = p.settings.width;
+      const H = p.settings.height;
+      for (const l of logos) {
+        // Fully inside the frame.
+        const fit = Math.min(W / 400, H / 200);
+        const w = 400 * fit * l.transform.scale;
+        const h = 200 * fit * l.transform.scale;
+        const cx = W / 2 + l.transform.x * W;
+        const cy = H / 2 + l.transform.y * H;
+        expect(cx - w / 2).toBeGreaterThan(0);
+        expect(cx + w / 2).toBeLessThan(W);
+        expect(cy - h / 2).toBeGreaterThan(0);
+        expect(l.trackId).not.toBe(getMainTrack(p).id);
+      }
+      const badge = logos.reduce((a, b) => (a.duration > b.duration ? a : b));
+      expect(badge.transform.opacity).toBe(0.9);
+    }
+  });
+
+  it('leaves the badge off when asked', () => {
+    const base = input('hype');
+    const p = buildReel({ ...base, info: { ...info, badge: false }, cards: { ...base.cards, logo: 'logo' } }, assets);
+    expect(p.clips.filter((c) => c.assetId === 'logo').length).toBe(2);
+  });
+
+  it('adds score bugs to scored plays and a final score card', () => {
+    const base = input('recruiting');
+    const clips = base.clips.map((c, i) => ({ ...c, score: ['18-21', '', '25–23'][i] || undefined, set: [2, undefined, 3][i] }));
+    const p = buildReel({ ...base, clips, info: { ...info, opponent: 'Westside Storm', sets: [['25', '21'], ['23', '25'], ['25', '19'], ['', '']] }, cards: { ...base.cards, final: 'final' } }, assets);
+    const t = texts(p);
+    expect(t).toContain('S2   ROCKETS 17  18–21  WESTSIDE');
+    expect(t).toContain('S3   ROCKETS 17  25–23  WESTSIDE');
+    expect(t.filter((x) => /–/.test(x) && /^S\d/.test(x)).length).toBe(2);
+    const main = contiguous(p);
+    const ids = main.map((c) => c.assetId);
+    expect(ids.indexOf('final')).toBe(ids.length - 2);
+    expect(t).toContain('FINAL');
+    expect(t).toContain('2 – 1');
+    expect(t).toContain('ROCKETS 17 ELITE WIN\nvs WESTSIDE STORM');
+    expect(t).toContain('25–21   23–25   25–19');
+    // Each bug spans exactly its play.
+    const bug = p.clips.find((c) => c.text?.content.startsWith('S2'))!;
+    const play = main[2];
+    expect(bug.start).toBeCloseTo(play.start);
+    expect(bug.duration).toBeCloseTo(play.duration);
+  });
+
+  it('skips the final card without set scores', () => {
+    const base = input('team');
+    const p = buildReel({ ...base, cards: { ...base.cards, final: 'final' } }, assets);
+    expect(trackClips(p, getMainTrack(p).id).some((c) => c.assetId === 'final')).toBe(false);
   });
 });

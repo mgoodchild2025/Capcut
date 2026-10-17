@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildReelFromWizard, findHighlightsIn, importFiles, stopPreviewSound, togglePreviewSound } from '../actions';
 import { highlightKey, useHighlights } from '../ai/highlightState';
 import { MUSIC, trackLength } from '../audio/synth';
-import { paintCard, TEAM_COLORS, type CardVariant } from '../templates/cards';
-import { POSITIONS, REEL_STYLES, SKILL_TAGS, type ReelClip, type ReelInfo, type ReelStyle, type RosterPlayer } from '../templates/reel';
+import { drawGraphic } from '../engine/graphics';
+import type { Clip, GraphicSpec } from '../model/types';
+import { openText } from '../templates/broadcast';
+import { POSITIONS, REEL_STYLES, SKILL_TAGS, TEAM_COLORS, type ReelClip, type ReelInfo, type ReelStyle, type RosterPlayer } from '../templates/reel';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatDuration, uid } from '../utils';
@@ -37,7 +39,6 @@ const BLANK: ReelInfo = {
   opponent: '',
   roster: [],
   sets: [],
-  badge: true,
 };
 
 /** Shrinks an uploaded logo to at most 512px and keeps its transparency. */
@@ -76,7 +77,7 @@ function loadInfo(): ReelInfo {
     if (raw) {
       const saved = { ...BLANK, ...JSON.parse(raw) } as ReelInfo;
       // Photos and clips belong to the project they were imported into.
-      return { ...saved, roster: (saved.roster ?? []).map((r) => ({ ...r, assetId: undefined })) };
+      return { ...saved, photo: undefined, roster: (saved.roster ?? []).map((r) => ({ ...r, assetId: undefined })) };
     }
   } catch {
     /* storage unavailable */
@@ -182,9 +183,9 @@ export function ReelWizard() {
         </header>
 
         <div className="wiz-body">
-          {step === 'style' && <StylePicker style={style} onPick={pickStyle} colors={info.colors} />}
+          {step === 'style' && <StylePicker style={style} onPick={pickStyle} info={info} />}
           {step === 'player' && <PlayerForm info={info} setInfo={setInfo} style={style} />}
-          {step === 'roster' && <RosterStep info={info} setInfo={setInfo} lineup={meta.roster === 'intros'} assets={assets} />}
+          {step === 'roster' && <RosterStep info={info} setInfo={setInfo} lineup={meta.roster === 'intros'} />}
           {step === 'clips' && (
             <ClipPicker
               clips={clips}
@@ -236,54 +237,81 @@ export function ReelWizard() {
 
 // ---------- step 1: style ----------
 
-const PREVIEW_VARIANT: Record<ReelStyle, CardVariant> = { recruiting: 'intro', hype: 'intro', recap: 'outro', spotlight: 'player', team: 'roster', lineup: 'player' };
-
 const aspectLabel = ([w, h]: [number, number]) => (w === h ? '1:1' : w * 5 === h * 4 ? '4:5' : h > w ? '9:16' : '16:9');
 
-function StylePicker({ style, onPick, colors }: { style: ReelStyle; onPick: (s: ReelStyle) => void; colors: [string, string] }) {
+/** The signature graphic of each style, with sample words, for the style picker. */
+function sampleSpec(id: ReelStyle, colors: [string, string]): { spec: GraphicSpec; at: number; duration: number } {
+  const base = { colors, logo: 'logo', oppLogo: 'opp' };
+  switch (id) {
+    case 'spotlight':
+      return { spec: { ...base, type: 'playerCard', text: { number: '12', first: 'Jordan', last: 'Lee', position: 'Outside hitter' } }, at: 2.2, duration: 4 };
+    case 'team':
+      return {
+        spec: { ...base, type: 'roster', text: { title: 'The squad', sub: 'Rockets 17 Elite' }, players: ['12', '4', '9', '7', '15', '3'].map((n, i) => ({ number: n, name: ['Lee', 'Rivera', 'Chen', 'Ortiz', 'Brooks', 'Park'][i] })) },
+        at: 3,
+        duration: 4.5,
+      };
+    case 'lineup':
+      return { spec: { ...base, type: 'open', text: { kicker: "TONIGHT'S", title: 'STARTING LINEUP', sub: 'Rockets vs Storm' } }, at: 2.2, duration: 4 };
+    case 'recap':
+      return { spec: { ...base, type: 'final', text: { usName: 'Rockets', themName: 'Storm', result: 'Rockets win 3-1' }, sets: [[25, 21], [23, 25], [25, 19], [25, 22]] }, at: 3, duration: 4.5 };
+    default:
+      return { spec: { ...base, type: 'open', text: { kicker: id === 'hype' ? '#12' : '#12 · OUTSIDE HITTER', title: 'JORDAN LEE', sub: 'Class of 2027' } }, at: 2.2, duration: 4 };
+  }
+}
+
+function StylePicker({ style, onPick, info }: { style: ReelStyle; onPick: (s: ReelStyle) => void; info: ReelInfo }) {
+  const [hover, setHover] = useState<ReelStyle | null>(null);
   return (
     <section className="wiz-step">
       <h3 className="wiz-title">Pick your play</h3>
-      <p className="wiz-lede">Every style builds a full edit you can keep tweaking: titles, music, transitions and all.</p>
+      <p className="wiz-lede">Broadcast-style graphics in your team colours: animated titles, player cards, score bugs and stingers. Everything stays editable.</p>
       <div className="style-cards">
-        {REEL_STYLES.map((s, i) => (
-          <button key={s.id} className={`style-card ${style === s.id ? 'on' : ''}`} onClick={() => onPick(s.id)} style={{ animationDelay: `${i * 70}ms` }}>
-            <span className={`style-frame ${s.aspect[1] > s.aspect[0] ? 'tall' : 'wide'}`}>
-              <CardPreview colors={colors} variant={PREVIEW_VARIANT[s.id]} number="12" width={s.aspect[0]} height={s.aspect[1]} />
-              <em>{aspectLabel(s.aspect)}</em>
-            </span>
-            <strong>{s.title}</strong>
-            <small>{s.blurb}</small>
-          </button>
-        ))}
+        {REEL_STYLES.map((s, i) => {
+          const sample = sampleSpec(s.id, info.colors);
+          return (
+            <button
+              key={s.id}
+              className={`style-card ${style === s.id ? 'on' : ''}`}
+              onClick={() => onPick(s.id)}
+              onPointerEnter={() => setHover(s.id)}
+              onPointerLeave={() => setHover((h) => (h === s.id ? null : h))}
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
+              <span className={`style-frame ${s.aspect[1] > s.aspect[0] ? 'tall' : 'wide'}`}>
+                <GraphicPreview spec={sample.spec} width={s.aspect[0]} height={s.aspect[1]} at={sample.at} duration={sample.duration} animate={hover === s.id} logo={info.logo} oppLogo={info.oppLogo} />
+                <em>{aspectLabel(s.aspect)}</em>
+              </span>
+              <strong>{s.title}</strong>
+              <small>{s.blurb}</small>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
 }
 
-/** Renders the real card artwork at thumbnail size, optionally with a name lockup. */
-function CardPreview({
-  colors,
-  variant,
-  width,
-  height,
-  name,
-  sub,
-  kicker,
-  number,
-  logo,
-}: {
-  colors: [string, string];
-  variant: CardVariant;
-  number?: string;
-  logo?: string;
-  width: number;
-  height: number;
-  name?: string;
-  sub?: string;
-  kicker?: string;
-}) {
+/** Loads an image from a data URL, for previews. */
+function useImage(url?: string) {
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!url) return setImg(null);
+    const i = new Image();
+    i.onload = () => setImg(i);
+    i.src = url;
+  }, [url]);
+  return img;
+}
+
+/**
+ * Draws a broadcast graphic exactly as the reel will, at thumbnail size. With `animate` it plays
+ * on a loop; otherwise it shows the moment `at`.
+ */
+function GraphicPreview({ spec, width, height, at, duration, animate, logo, oppLogo }: { spec: GraphicSpec; width: number; height: number; at: number; duration: number; animate?: boolean; logo?: string; oppLogo?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const logoImg = useImage(logo);
+  const oppImg = useImage(oppLogo);
   useEffect(() => {
     const c = ref.current;
     if (!c) return;
@@ -291,42 +319,115 @@ function CardPreview({
     c.width = Math.round(width * k);
     c.height = Math.round(height * k);
     const ctx = c.getContext('2d')!;
-    paintCard(ctx, c.width, c.height, colors, variant, { number });
-    if (name) {
-      const S = Math.min(c.width, c.height);
-      const portrait = c.height > c.width;
-      const x = portrait || variant === 'player' ? c.width / 2 : c.width * 0.3;
-      const y = c.height * (variant === 'player' ? 0.7 : portrait ? 0.38 : 0.5);
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      if (kicker) {
-        ctx.fillStyle = colors[1];
-        ctx.font = `900 ${S * 0.07}px "Big Shoulders Display", Impact, sans-serif`;
-        ctx.fillText(kicker, x, y - S * 0.15);
-      }
-      ctx.fillStyle = '#fff';
-      ctx.font = `900 ${Math.min(S * 0.17, (c.width * (portrait ? 0.9 : 0.5)) / Math.max(4, name.length) * 1.8)}px "Big Shoulders Display", Impact, sans-serif`;
-      ctx.shadowColor = 'rgba(0,0,0,0.5)';
-      ctx.shadowBlur = 8;
-      ctx.fillText(name.toUpperCase(), x, y);
-      ctx.shadowBlur = 0;
-      if (sub) {
-        ctx.fillStyle = '#e5e7eb';
-        ctx.font = `600 ${S * 0.045}px Inter, system-ui, sans-serif`;
-        ctx.fillText(sub.toUpperCase(), x, y + S * 0.14);
-      }
+    const clip = { graphic: spec, duration } as Clip;
+    const lookup = (id: string) => (id === 'logo' ? logoImg : id === 'opp' ? oppImg : null);
+    const draw = (t: number) => {
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      drawGraphic(ctx, clip, t, width, height, lookup, null);
+    };
+    if (!animate) {
+      draw(at);
+      // Web fonts may land after the first draw.
+      void document.fonts?.ready.then(() => draw(at));
+      return;
     }
-    if (logo) {
-      const img = new Image();
-      img.onload = () => {
-        const S = Math.min(c.width, c.height);
-        const k = Math.min((S * 0.15) / img.height, (S * 0.32) / img.width);
-        ctx.drawImage(img, S * 0.045, S * 0.045, img.width * k, img.height * k);
-      };
-      img.src = logo;
-    }
-  }, [colors, variant, width, height, name, sub, kicker, number, logo]);
+    let raf = 0;
+    const t0 = performance.now();
+    const loop = () => {
+      // Play through, hold the finished frame for a moment, then go again.
+      const t = ((performance.now() - t0) / 1000) % (duration + 0.8);
+      draw(Math.min(t, duration - 0.5));
+      raf = requestAnimationFrame(loop);
+    };
+    loop();
+    return () => cancelAnimationFrame(raf);
+  }, [spec, width, height, at, duration, animate, logoImg, oppImg]);
   return <canvas ref={ref} className="card-preview" aria-hidden="true" />;
+}
+
+/** Picks a photo or short clip from the project (or uploads one), with an optional background cut-out. */
+function MediaPick({
+  assetId,
+  cutout,
+  onPick,
+  onCutout,
+  label,
+  fallback,
+}: {
+  assetId?: string;
+  cutout?: boolean;
+  onPick: (id: string | undefined) => void;
+  onCutout?: (v: boolean) => void;
+  label: string;
+  fallback: React.ReactNode;
+}) {
+  const assets = useEditor((s) => s.assets);
+  const [open, setOpen] = useState(false);
+  const a = assetId ? assets[assetId] : undefined;
+  const media = Object.values(assets).filter((m) => (m.kind === 'image' && !/(logo| card|cutout)\.png$/i.test(m.name)) || (m.kind === 'video' && !/reversed/.test(m.name)));
+  return (
+    <div className="media-pick">
+      <button type="button" className={`roster-media ${a ? 'has' : ''}`} onClick={() => setOpen((v) => !v)} aria-label={a ? `Change ${label}` : `Add ${label}`} aria-expanded={open}>
+        {a?.thumbnail ? <img src={a.thumbnail} alt="" /> : fallback}
+        {a?.kind === 'video' && <i className="media-kind">clip</i>}
+      </button>
+      {a?.kind === 'image' && onCutout && (
+        <button type="button" className={`chip-btn ${cutout ? 'on' : ''}`} aria-pressed={!!cutout} onClick={() => onCutout(!cutout)} title="Cut the player out of the photo's background">
+          Cut out
+        </button>
+      )}
+      {open && (
+        <div className="roster-pick">
+          <label className="pick-tile upload">
+            <Icon name="upload" size={18} />
+            <span>Upload</span>
+            <input
+              type="file"
+              accept="image/*,video/*"
+              hidden
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (!files?.length) return;
+                const [added] = await importFiles(files);
+                if (added) onPick(added.id);
+                setOpen(false);
+              }}
+            />
+          </label>
+          <button type="button" className={`pick-tile ${!assetId ? 'on' : ''}`} onClick={() => (onPick(undefined), setOpen(false))}>
+            {fallback}
+            <span>None</span>
+          </button>
+          {media.map((m) => (
+            <button type="button" key={m.id} className={`pick-tile ${assetId === m.id ? 'on' : ''}`} onClick={() => (onPick(m.id), setOpen(false))} title={m.name}>
+              {m.thumbnail && <img src={m.thumbnail} alt="" />}
+              <span>{m.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Upload box for a logo (kept as a small PNG data URL). */
+function LogoDrop({ value, onChange, label }: { value?: string; onChange: (v: string | undefined) => void; label: string }) {
+  return (
+    <label className="logo-drop" title={value ? `Change ${label}` : `Upload ${label}`}>
+      {value ? <img src={value} alt={label} /> : <Icon name="upload" />}
+      <input
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) onChange(await logoDataUrl(f).catch(() => undefined));
+        }}
+      />
+    </label>
+  );
 }
 
 // ---------- step 2: player ----------
@@ -419,35 +520,50 @@ function PlayerForm({ info, setInfo, style }: { info: ReelInfo; setInfo: (f: (i:
         </div>
 
         <h4 className="wiz-sub">
-          Team logo <small>optional, remembered</small>
+          Logos <small>optional, remembered</small>
         </h4>
         <div className="logo-row">
-          <label className="logo-drop" title={info.logo ? 'Change logo' : 'Upload logo'}>
-            {info.logo ? <img src={info.logo} alt="Team logo" /> : <Icon name="upload" />}
-            <input
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                e.target.value = '';
-                if (f) set({ logo: await logoDataUrl(f).catch(() => undefined) });
-              }}
-            />
-          </label>
-          {info.logo ? (
-            <div className="logo-opts">
-              <label className="check">
-                <input type="checkbox" checked={info.badge} onChange={(e) => set({ badge: e.target.checked })} /> Corner badge during plays
-              </label>
-              <button className="link-btn" onClick={() => set({ logo: undefined })}>
-                Remove logo
-              </button>
-            </div>
-          ) : (
-            <small className="muted">Shown on the title and closing cards, and as a small badge during plays. PNG with a transparent background looks best.</small>
-          )}
+          <LogoDrop value={info.logo} onChange={(v) => set({ logo: v })} label="team logo" />
+          <LogoDrop value={info.oppLogo} onChange={(v) => set({ oppLogo: v })} label="opponent logo" />
+          <small className="muted">
+            Your logo goes on the title, player cards, lower thirds and score bug; the opponent's on the score bug, final score{style === 'lineup' ? ' and the versus title' : ''}. PNGs with a transparent background look best.
+            {(info.logo || info.oppLogo) && (
+              <>
+                {' '}
+                {info.logo && (
+                  <button className="link-btn" onClick={() => set({ logo: undefined })}>
+                    Remove team logo
+                  </button>
+                )}
+                {info.oppLogo && (
+                  <button className="link-btn" onClick={() => set({ oppLogo: undefined })}>
+                    {' '}
+                    Remove opponent logo
+                  </button>
+                )}
+              </>
+            )}
+          </small>
         </div>
+
+        {!team && (
+          <>
+            <h4 className="wiz-sub">
+              Player photo or clip <small>optional</small>
+            </h4>
+            <div className="logo-row">
+              <MediaPick
+                assetId={info.photo}
+                cutout={info.photoCutout}
+                onPick={(id) => set({ photo: id })}
+                onCutout={(v) => set({ photoCutout: v })}
+                label="player photo"
+                fallback={<b>{info.number ? `#${info.number.replace('#', '')}` : <Icon name="image" size={18} />}</b>}
+              />
+              <small className="muted">For the player card. A posed photo, or a 2-3 second clip of them (a celebration, a spike). Turn on Cut out to remove the photo's background.</small>
+            </div>
+          </>
+        )}
 
         {style !== 'lineup' && (
           <>
@@ -514,33 +630,16 @@ function PlayerForm({ info, setInfo, style }: { info: ReelInfo; setInfo: (f: (i:
         )}
       </div>
       <aside className="player-preview">
-        <span className="preview-label">Title card</span>
-        <CardPreview
-          colors={info.colors}
-          variant={style === 'spotlight' ? 'player' : 'intro'}
-          number={info.number}
-          logo={info.logo}
+        <span className="preview-label">Title</span>
+        <GraphicPreview
+          spec={{ type: 'open', colors: info.colors, text: openText(style, info), logo: info.logo ? 'logo' : undefined, oppLogo: style === 'lineup' && info.oppLogo ? 'opp' : undefined }}
           width={aspect[0]}
           height={aspect[1]}
-          name={info.name || (team ? 'Team name' : 'Player name')}
-          kicker={
-            style === 'lineup'
-              ? 'STARTING LINEUP'
-              : style === 'spotlight'
-                ? info.headline.toUpperCase()
-                : team
-                  ? `SEASON ${info.season}`
-                  : info.number
-                    ? `#${info.number.replace('#', '')}`
-                    : ''
-          }
-          sub={
-            style === 'lineup'
-              ? info.opponent && `vs ${info.opponent}`
-              : team
-                ? info.record
-                : [info.position, info.gradYear && `Class of ${info.gradYear}`].filter(Boolean).join(' · ')
-          }
+          at={2.4}
+          duration={4}
+          animate
+          logo={info.logo}
+          oppLogo={info.oppLogo}
         />
       </aside>
     </section>
@@ -568,19 +667,14 @@ function RosterStep({
   info,
   setInfo,
   lineup,
-  assets,
 }: {
   info: ReelInfo;
   setInfo: (f: (i: ReelInfo) => ReelInfo) => void;
   lineup: boolean;
-  assets: ReturnType<typeof useEditor.getState>['assets'];
 }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
   const [pasting, setPasting] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const roster = info.roster;
-  const media = Object.values(assets).filter((a) => (a.kind === 'image' && !/ card\.png$/.test(a.name)) || (a.kind === 'video' && !/reversed/.test(a.name)));
-
   useEffect(() => {
     if (!info.roster.length) setInfo((i) => ({ ...i, roster: [blankPlayer(), blankPlayer()] }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -598,7 +692,14 @@ function RosterStep({
     });
   const addPasted = () => {
     const players = parseRoster(pasteText);
-    if (players.length) setInfo((i) => ({ ...i, roster: [...i.roster.filter((r) => r.name.trim() || r.number.trim()), ...players] }));
+    // Pasting the same list again (or an updated one) doesn't duplicate anyone already listed.
+    const id = (r: RosterPlayer) => `${r.number.replace('#', '')}|${r.name.trim().toLowerCase()}`;
+    if (players.length)
+      setInfo((i) => {
+        const kept = i.roster.filter((r) => r.name.trim() || r.number.trim());
+        const have = new Set(kept.map(id));
+        return { ...i, roster: [...kept, ...players.filter((r) => !have.has(id(r)))] };
+      });
     setPasteText('');
     setPasting(false);
   };
@@ -614,8 +715,8 @@ function RosterStep({
       </div>
       <p className="wiz-lede">
         {lineup
-          ? 'Starters are introduced in this order. Add a photo or clip for each one, or leave it and they get a jersey-number card.'
-          : 'Add your players, then credit each play to whoever made it.'}
+          ? 'Starters are introduced in this order. Add a photo or a short clip for each one (or leave it for a jersey-number card); Cut out removes a photo\'s background.'
+          : 'Add your players (photos are optional, for the roster wall), then credit each play to whoever made it.'}
       </p>
       {pasting && (
         <div className="roster-paste">
@@ -633,19 +734,16 @@ function RosterStep({
       )}
       <ol className="roster-rows">
         {roster.map((r, i) => {
-          const a = r.assetId ? assets[r.assetId] : undefined;
           return (
             <li key={r.key} className={`roster-row ${lineup && !r.starter ? 'bench' : ''}`}>
-              {lineup && (
-                <button
-                  className={`roster-media ${a ? 'has' : ''}`}
-                  onClick={() => setOpenKey(openKey === r.key ? null : r.key)}
-                  aria-label={a ? `Change photo for ${r.name || 'player'}` : `Add photo for ${r.name || 'player'}`}
-                  aria-expanded={openKey === r.key}
-                >
-                  {a?.thumbnail ? <img src={a.thumbnail} alt="" /> : <b>{r.number ? `#${r.number.replace('#', '')}` : <Icon name="image" size={18} />}</b>}
-                </button>
-              )}
+              <MediaPick
+                assetId={r.assetId}
+                cutout={r.cutout}
+                onPick={(id) => update(r.key, { assetId: id })}
+                onCutout={(v) => update(r.key, { cutout: v })}
+                label={`photo for ${r.name || 'player'}`}
+                fallback={<b>{r.number ? `#${r.number.replace('#', '')}` : <Icon name="image" size={18} />}</b>}
+              />
               <input className="roster-num" aria-label="Jersey number" inputMode="numeric" placeholder="#" value={r.number} onChange={(e) => update(r.key, { number: e.target.value.slice(0, 3) })} />
               <input className="roster-name" aria-label="Player name" placeholder="Player name" value={r.name} onChange={(e) => update(r.key, { name: e.target.value })} />
               <select className="roster-pos" aria-label="Position" value={r.position} onChange={(e) => update(r.key, { position: e.target.value })}>
@@ -669,36 +767,6 @@ function RosterStep({
                   <Icon name="close" size={14} />
                 </button>
               </span>
-              {lineup && openKey === r.key && (
-                <div className="roster-pick">
-                  <label className="pick-tile upload">
-                    <Icon name="upload" size={18} />
-                    <span>Upload</span>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      hidden
-                      onChange={async (e) => {
-                        const files = e.target.files;
-                        if (!files?.length) return;
-                        const [added] = await importFiles(files);
-                        if (added) update(r.key, { assetId: added.id });
-                        setOpenKey(null);
-                      }}
-                    />
-                  </label>
-                  <button className={`pick-tile ${!r.assetId ? 'on' : ''}`} onClick={() => (update(r.key, { assetId: undefined }), setOpenKey(null))}>
-                    <b>#{r.number || '?'}</b>
-                    <span>Number card</span>
-                  </button>
-                  {media.map((m) => (
-                    <button key={m.id} className={`pick-tile ${r.assetId === m.id ? 'on' : ''}`} onClick={() => (update(r.key, { assetId: m.id }), setOpenKey(null))} title={m.name}>
-                      {m.thumbnail && <img src={m.thumbnail} alt="" />}
-                      <span>{m.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </li>
           );
         })}

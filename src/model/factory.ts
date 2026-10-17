@@ -47,6 +47,34 @@ export function createTextClip(style: Partial<TextStyle> = {}, start = 0): Clip 
   };
 }
 
+/** Names shown on the timeline for each kind of graphic. */
+export const GRAPHIC_NAMES: Record<import('./types').GraphicType, string> = {
+  open: 'Title open',
+  stinger: 'Stinger',
+  lowerThird: 'Lower third',
+  scoreBug: 'Score bug',
+  playerCard: 'Player card',
+  stats: 'Stats board',
+  roster: 'Roster board',
+  final: 'Final score',
+  closer: 'Closer',
+};
+
+export function createGraphicClip(graphic: import('./types').GraphicSpec, start: number, duration: number, label = '', assetId?: string): Clip {
+  return {
+    ...clipDefaults(),
+    id: uid('c_'),
+    trackId: '',
+    kind: 'graphic',
+    name: [GRAPHIC_NAMES[graphic.type], label].filter(Boolean).join(' · '),
+    start,
+    duration,
+    assetId,
+    volume: 0,
+    graphic,
+  };
+}
+
 export function createStickerClip(sticker: string, start = 0): Clip {
   return {
     ...clipDefaults(),

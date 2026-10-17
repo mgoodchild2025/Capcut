@@ -36,7 +36,31 @@ export interface Track {
   locked: boolean;
 }
 
-export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker';
+export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'graphic';
+
+export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer';
+
+/** A broadcast motion graphic, drawn procedurally each frame (see engine/graphics.ts). */
+export interface GraphicSpec {
+  type: GraphicType;
+  /** Team colours: primary, accent. */
+  colors: [string, string];
+  /** Named text fields (title, kicker, sub, name, number, position, ...), depending on the type. */
+  text: Record<string, string>;
+  /** Asset ids of the team's and the opponent's logos. */
+  logo?: string;
+  oppLogo?: string;
+  /** Stat rows: [label, value]. */
+  rows?: [string, string][];
+  /** Roster wall tiles. */
+  players?: { number: string; name: string; photo?: string }[];
+  /** Set scores, [ours, theirs]. */
+  sets?: [number, number][];
+  /** The clip's photo has a transparent background: show the player cut out rather than in a window. */
+  cutout?: boolean;
+  /** What the clip's own asset is, so export knows to decode it as video. */
+  media?: 'image' | 'video';
+}
 
 export interface Transform {
   /** Centre offset from canvas centre, as a fraction of canvas width. */
@@ -207,6 +231,8 @@ export interface Clip {
   flipH?: boolean;
   flipV?: boolean;
   chroma?: ChromaKey;
+  /** Motion graphic (kind 'graphic'); its `assetId`, if any, is the photo or clip it shows. */
+  graphic?: GraphicSpec;
 }
 
 export interface ProjectSettings {

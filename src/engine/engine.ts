@@ -319,9 +319,16 @@ class Engine {
   private getSource = (clip: Clip): Source | null => {
     const asset = clip.assetId ? useEditor.getState().assets[clip.assetId] : undefined;
     if (!asset) return null;
-    if (clip.kind === 'image') return this.imageFor(asset);
-    if (clip.kind === 'video') return this.mediaFor(clip, asset).el as HTMLVideoElement;
+    if (clip.kind === 'image' || (clip.kind === 'graphic' && asset.kind === 'image')) return this.imageFor(asset);
+    if (clip.kind === 'video' || (clip.kind === 'graphic' && asset.kind === 'video')) return this.mediaFor(clip, asset).el as HTMLVideoElement;
     return null;
+  };
+
+  private getImage = (assetId: string): CanvasImageSource | null => {
+    const asset = useEditor.getState().assets[assetId];
+    if (!asset || asset.kind !== 'image') return null;
+    const img = this.imageFor(asset);
+    return img.complete && img.naturalWidth ? img : null;
   };
 
   /**
@@ -357,8 +364,9 @@ class Engine {
 
     for (const layer of layers) {
       const { clip, track } = layer;
-      if (clip.kind !== 'video' && clip.kind !== 'audio') continue;
       const asset = clip.assetId ? assets[clip.assetId] : undefined;
+      // Graphics showing a player's clip play it like a (silent) video clip.
+      if (clip.kind !== 'video' && clip.kind !== 'audio' && !(clip.kind === 'graphic' && asset?.kind === 'video')) continue;
       if (!asset) continue;
       const entry = this.mediaFor(clip, asset);
       live.add(clip.id);
@@ -407,8 +415,8 @@ class Engine {
 
     // Pre-roll clips that are about to start so the cut is seamless.
     for (const clip of upcomingClips(project, t)) {
-      if (clip.kind !== 'video' && clip.kind !== 'audio') continue;
       const asset = clip.assetId ? assets[clip.assetId] : undefined;
+      if (clip.kind !== 'video' && clip.kind !== 'audio' && !(clip.kind === 'graphic' && asset?.kind === 'video')) continue;
       if (!asset) continue;
       const entry = this.mediaFor(clip, asset);
       live.add(clip.id);
@@ -464,6 +472,7 @@ class Engine {
       if (ctx) {
         this.boxes = renderFrame(ctx, project, shown, {
           getSource: this.getSource,
+          getImage: this.getImage,
           direct: direct
             ? {
                 clipId: direct.clipId,
@@ -477,7 +486,7 @@ class Engine {
       }
       if (!placed) this.hideDirect();
     }
-    if (this.exportCtx) renderFrame(this.exportCtx, project, t, { getSource: this.getSource });
+    if (this.exportCtx) renderFrame(this.exportCtx, project, t, { getSource: this.getSource, getImage: this.getImage });
     for (const fn of this.listeners) fn(this.boxes);
   };
 

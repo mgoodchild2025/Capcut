@@ -1,4 +1,5 @@
 import { activeWordIndex } from '../captions/captions';
+import { drawGraphic } from './graphics';
 import { activeLayers, type Layer } from '../model/ops';
 import { transformAt } from '../model/timing';
 import { applyChroma } from './chroma';
@@ -186,6 +187,8 @@ export interface DirectPlacement {
 
 export interface RenderOptions {
   getSource: (clip: Clip) => Source | null;
+  /** Images by asset id, for graphics (logos, roster photos). */
+  getImage?: (assetId: string) => CanvasImageSource | null;
   /**
    * The bottom video, shown by the page itself (a `<video>` under a transparent canvas) instead of
    * being copied onto the canvas, which is slow on phones. Its placement is reported, not drawn,
@@ -302,6 +305,13 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
           ctx.fillRect(-w / 2, -h / 2, w, h);
         }
       }
+    } else if (clip.kind === 'graphic' && clip.graphic) {
+      // Graphics draw in project coordinates; the clip's transform moves and scales the whole thing.
+      ctx.scale(scale, scale);
+      ctx.translate(-W / 2, -H / 2);
+      drawGraphic(ctx, clip, layer.local, W, H, (id) => opts.getImage?.(id) ?? null, opts.getSource(clip));
+      w = W * scale;
+      h = H * scale;
     } else if (clip.kind === 'text' && clip.text) {
       [w, h] = drawText(ctx, clip, Math.min(W, H), scale, m.blur * pxScale, layer.sourceTime);
     } else if (clip.kind === 'sticker' && clip.sticker) {

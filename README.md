@@ -6,32 +6,31 @@ A CapCut-style video editor that runs entirely in the browser, with a built-in w
 
 ## Volleyball highlight reels
 
+Every reel is built from a **broadcast graphics package** in your team colours, drawn as motion graphics frame by frame (the preview and the export draw the same frames):
+
+- **Title open**: logo slam with a shockwave, masked title reveal, kicker plate and light sweep. The starting lineup opens **versus**, with both logos.
+- **Player card**: the player's photo, a cut-out (background removed) with a rim glow, or a short clip in an angled window, with a giant number, stacked name and position plate.
+- **Player ID lower third**: number block, name bar and the play (Kill, Ace...), built out in sequence.
+- **Score bug**: both teams' logos, scores and the set.
+- **Boards**: stats with count-up numbers, a roster wall of player tiles with photos, and a final scoreboard with every set.
+- **Stingers** in team colours cover section changes, and a **closer** with a logo lockup ends the reel.
+
 1. On the home screen, pick a template. You can also open the **Volleyball** tab in the editor.
 
    | Template | Format | For |
    | --- | --- | --- |
-   | Recruiting reel | 16:9 | College coaches: profile card, spotlights, stats, contact details |
-   | Hype reel | 9:16 | TikTok and Reels: beat-synced cuts, slow motion, flashes |
-   | Player spotlight | 4:5 | Feed posts like Player of the Game or Senior Night: jersey-number art, every play rings the player |
-   | Team reel | 9:16 | The team account: roster card, each play credited to a player, team stats |
-   | Starting lineup | 9:16 | Pre-game hype: each starter's number, name and position over their photo, clip or a number card |
-   | Season recap | 16:9 | Team montage with record, stats and a send-off |
+   | Recruiting reel | 16:9 | College coaches: open, profile card, plays with player IDs, stats, contact details |
+   | Hype reel | 9:16 | TikTok and Reels: beat-synced cuts, slow motion, stingers |
+   | Player spotlight | 4:5 | Feed posts like Player of the Game or Senior Night |
+   | Team reel | 9:16 | The team account: roster wall, each play credited to a player, team stats |
+   | Starting lineup | 9:16 | Pre-game hype: a player card per starter with their photo, cut-out or clip |
+   | Season recap | 16:9 | Team montage with stats, final score and a send-off |
 
-   Add your **team logo** once (it's remembered): it goes on title and closing cards, and as a corner badge during plays.
-   Optionally enter the **match score**: the opponent and set scores add a **Final** card, and a score per play (e.g. `18-21`, set 2) shows a live score bug.
-
-   Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one. The roster is remembered for next time.
-2. Enter the player or team details and pick team colours. The title card previews live, and details are remembered for next time.
-3. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. It then ranks the best rallies, each framed from serve to end whistle. Pick plays from the AI results or use whole clips, then add skill labels (Kill, Ace, Block...) and reorder them.
-4. Vertical and 4:5 reels **auto-follow the action**: on-device motion tracking pans wide game footage to keep the play in frame. **Auto reframe** in the clip tools does the same for any clip in the editor.
-5. Tap your player in each play to place a **spotlight**. The reel freezes that frame, dims the surroundings and rings the player.
-6. Choose a music track and press **Build my reel**. You get a complete, editable timeline:
-   - Title, profile, stats and outro cards painted in your team colours.
-   - Spotlights, skill labels and a corner name tag.
-   - Transitions and music.
-   - Hype reels add slow-motion on the hit, cuts locked to the beat, flashes and whooshes, and reframe landscape footage to 9:16 around your player.
-
-The Volleyball tab also has text presets (KILL!, ACE!, BLOCK!, DIG!, name and score bugs) and stickers.
+2. Enter the player or team details, pick team colours and add your **team and opponent logos** (remembered for next time). Player reels take a **photo or short clip** of the player; turn on **Cut out** to remove a photo's background. Optionally enter the **match score**: set scores add the final scoreboard, and a score per play shows the score bug.
+3. Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
+4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them (Kill, Ace, Block...) and credit them to players.
+5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them.
+6. Choose a music track and press **Build my reel**. Select any graphic in the editor to change its words and colours.
 
 ## Editor features
 

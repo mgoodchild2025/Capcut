@@ -16,12 +16,14 @@ import type { AnimKind, Clip, TextStyle, TransitionKind } from '../model/types';
 import { edit, selectedClip, useEditor } from '../store';
 import { ColorField, gestureProps, Section, Segmented, Slider, Toggle } from '../ui/controls';
 import { CropSection, CurveSection, CutoutPanel, KeyframeNav, KeySlider, QuickActions, SpotlightPanel } from './ClipTools';
+import { GraphicPanel } from './GraphicPanel';
 import { Icon } from '../ui/Icon';
 import { formatTimecode } from '../utils';
 
-type Tab = 'text' | 'basic' | 'audio' | 'speed' | 'animation' | 'adjust' | 'cutout' | 'spotlight';
+type Tab = 'graphic' | 'text' | 'basic' | 'audio' | 'speed' | 'animation' | 'adjust' | 'cutout' | 'spotlight';
 
 const TAB_LABELS: Record<Tab, string> = {
+  graphic: 'Graphic',
   text: 'Text',
   basic: 'Basic',
   audio: 'Audio',
@@ -44,6 +46,8 @@ function tabsFor(c: Clip): Tab[] {
       return ['text', 'basic', 'animation'];
     case 'sticker':
       return ['basic', 'animation'];
+    case 'graphic':
+      return ['graphic', 'basic'];
   }
 }
 
@@ -55,6 +59,7 @@ export function Inspector() {
 
   useEffect(() => {
     if (clip?.kind === 'text') setTab('text');
+    if (clip?.kind === 'graphic') setTab('graphic');
   }, [clip?.id, clip?.kind]);
 
   if (!clip) return <ProjectPanel />;
@@ -77,6 +82,7 @@ export function Inspector() {
         ))}
       </nav>
       <div className="insp-body">
+        {active === 'graphic' && <GraphicPanel clip={clip} />}
         {active === 'text' && <TextPanel clip={clip} />}
         {active === 'basic' && <BasicPanel clip={clip} />}
         {active === 'audio' && <AudioPanel clip={clip} />}

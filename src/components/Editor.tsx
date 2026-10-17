@@ -21,6 +21,7 @@ import { Inspector } from './Inspector';
 import { useIsMobile } from '../ui/useMediaQuery';
 import { Library } from './Library';
 import { MobileWorkspace } from './MobileWorkspace';
+import { ReelWizard } from './ReelWizard';
 import { Preview } from './Preview';
 import { Timeline } from './Timeline';
 
@@ -30,10 +31,11 @@ export function Editor() {
   const name = useEditor((s) => s.project.name);
   const hasClips = useEditor((s) => s.project.clips.length > 0);
   const mobile = useIsMobile();
+  const wizard = useEditor((s) => !!s.wizard);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || exporting) return;
+      if (isTypingTarget(e.target) || exporting || useEditor.getState().wizard) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (mod && key === 'z') {
@@ -146,6 +148,7 @@ export function Editor() {
         </>
       )}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
+      {wizard && <ReelWizard />}
       {fileDrag && <div className="drop-overlay">Drop to import</div>}
     </div>
   );

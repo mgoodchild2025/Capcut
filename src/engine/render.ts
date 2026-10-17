@@ -102,6 +102,10 @@ function applyTransition(m: Motion, kind: TransitionKind, progress: number, role
         m.scale *= 1 + 0.3 * p;
       }
       break;
+    case 'flash':
+      // Hard cut hidden under a white flash (drawn by renderFrame).
+      m.alpha *= role === 'in' ? (progress >= 0.5 ? 1 : 0) : progress < 0.5 ? 1 : 0;
+      break;
     case 'blur':
       if (role === 'in') {
         m.blur += (1 - p) * 24;
@@ -193,7 +197,18 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
     const m = motionFor(layer);
     const tr = transformAt(clip, layer.local);
     const alpha = tr.opacity * m.alpha;
-    if (alpha <= 0.001) continue;
+    const flash = () => {
+      if (layer.transition?.kind !== 'flash' || layer.transition.role !== 'in') return;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - Math.abs(layer.transition.progress * 2 - 1));
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    };
+    if (alpha <= 0.001) {
+      flash();
+      continue;
+    }
 
     let w = 0;
     let h = 0;
@@ -271,6 +286,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
       h = size * 1.15 * scale;
     }
     ctx.restore();
+    flash();
     if (w > 0) boxes.push({ clipId: clip.id, cx, cy, w, h, rotation });
   }
   ctx.restore();

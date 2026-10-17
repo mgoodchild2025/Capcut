@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { addAssetToTimeline, importFiles, newProject, openDraft } from '../actions';
 import { deleteDraft, listDrafts, renameDraft, type DraftSummary } from '../engine/persist';
 import { ASPECT_PRESETS } from '../model/presets';
+import { useEditor } from '../store';
+import { REEL_STYLES } from '../templates/reel';
 import { Icon } from '../ui/Icon';
 import { formatDuration } from '../utils';
 
@@ -87,6 +89,40 @@ export function Home() {
               />
             </label>
           </div>
+        </div>
+      </section>
+
+      <section className="templates">
+        <div className="templates-head">
+          <h2>
+            <Icon name="volleyball" /> Volleyball highlight reels
+          </h2>
+          <p>Drop in game footage. AI finds the best rallies, then we build the reel: titles, spotlights, music and all.</p>
+        </div>
+        <div className="tpl-cards">
+          {REEL_STYLES.map((t, i) => (
+            <button
+              key={t.id}
+              className={`tpl-card tpl-${t.id}`}
+              style={{ animationDelay: `${i * 80}ms` }}
+              onClick={() => {
+                newProject(t.aspect[0], t.aspect[1]);
+                useEditor.setState({ wizard: { style: t.id }, leftTab: 'volleyball' });
+              }}
+            >
+              <span className="tpl-art" aria-hidden="true">
+                <span className={`tpl-frame ${t.aspect[1] > t.aspect[0] ? 'tall' : 'wide'}`}>
+                  <b>{t.id === 'recap' ? 'SEASON' : '#12'}</b>
+                  <i />
+                </span>
+              </span>
+              <strong>{t.title}</strong>
+              <small>{t.blurb}</small>
+              <span className="tpl-go">
+                Start <Icon name="chevronRight" size={16} />
+              </span>
+            </button>
+          ))}
         </div>
       </section>
 

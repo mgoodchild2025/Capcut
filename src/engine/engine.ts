@@ -49,6 +49,9 @@ class Engine {
       }
     });
     requestAnimationFrame(this.loop);
+    // Web fonts arrive after first paint; redraw text once they do.
+    document.fonts?.addEventListener?.('loadingdone', this.invalidate);
+    void document.fonts?.load?.('800 40px "Big Shoulders Display"').then(this.invalidate, () => {});
   }
 
   /** Silences the speakers (not the export mix), e.g. while recording a voiceover. */

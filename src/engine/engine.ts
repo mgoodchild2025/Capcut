@@ -51,6 +51,12 @@ class Engine {
     requestAnimationFrame(this.loop);
   }
 
+  /** Silences the speakers (not the export mix), e.g. while recording a voiceover. */
+  setMonitorMuted(muted: boolean) {
+    this.ensureAudio();
+    if (this.master && this.audioCtx) this.master.gain.setTargetAtTime(muted ? 0 : 1, this.audioCtx.currentTime, 0.02);
+  }
+
   invalidate = () => {
     this.dirtyFrames = Math.max(this.dirtyFrames, 8);
   };

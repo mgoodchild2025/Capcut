@@ -16,6 +16,9 @@ export interface Asset {
   filmstrip?: string[];
   /** Normalised peak values (0..1), WAVEFORM_RATE per second of source. */
   waveform?: number[];
+  /** Beat times in source seconds, from the built-in library or beat detection. */
+  beats?: number[];
+  bpm?: number;
 }
 
 /** Timeline track kinds. Video tracks hold video/image clips, text tracks hold text/sticker clips. */

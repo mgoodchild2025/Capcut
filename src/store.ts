@@ -27,6 +27,8 @@ export interface EditorState {
   task: { label: string; progress: number | null; cancel?: () => void } | null;
   /** Preview click mode: sample a key colour or place a spotlight on the selected clip. */
   pick: 'chroma' | 'spotlight' | null;
+  /** Voiceover recording in progress, started at this timeline time. */
+  recording: { start: number } | null;
 }
 
 export const useEditor = create<EditorState>(() => ({
@@ -46,6 +48,7 @@ export const useEditor = create<EditorState>(() => ({
   toast: null,
   task: null,
   pick: null,
+  recording: null,
 }));
 
 const get = useEditor.getState;

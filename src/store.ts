@@ -33,6 +33,12 @@ export interface EditorState {
   wizard: { style?: import('./templates/reel').ReelStyle } | null;
 }
 
+/**
+ * The playhead for panels that only need to keep roughly in step: exact while paused, four times a
+ * second while playing. Re-rendering a panel on every frame is what makes playback stutter on phones.
+ */
+export const coarseTime = (s: { playing: boolean; currentTime: number }) => (s.playing ? Math.floor(s.currentTime * 4) / 4 : s.currentTime);
+
 export const useEditor = create<EditorState>(() => ({
   view: 'home',
   project: createProject(),

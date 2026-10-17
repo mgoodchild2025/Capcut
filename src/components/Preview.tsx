@@ -308,18 +308,30 @@ export function Preview() {
   );
 }
 
+/** The running timecode, written straight to the page so the controls around it don't re-render every frame. */
+function Timecode({ fps }: { fps: number }) {
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const show = (t: number) => {
+      if (ref.current) ref.current.textContent = formatTimecode(t, fps);
+    };
+    show(useEditor.getState().currentTime);
+    return useEditor.subscribe((s, prev) => s.currentTime !== prev.currentTime && show(s.currentTime));
+  }, [fps]);
+  return <b ref={ref} />;
+}
+
 function Transport() {
-  const t = useEditor((s) => s.currentTime);
   const playing = useEditor((s) => s.playing);
   const project = useEditor((s) => s.project);
   const dur = projectDuration(project);
   const fps = project.settings.fps;
-  const atEnd = !playing && dur > 0 && t >= dur - 0.01;
+  const atEnd = useEditor((s) => !s.playing && dur > 0 && s.currentTime >= dur - 0.01);
   const label = playing ? 'Pause' : atEnd ? 'Replay' : 'Play';
   return (
     <div className="transport">
       <span className="tc">
-        <b>{formatTimecode(t, fps)}</b>
+        <Timecode fps={fps} />
         <span> / {formatTimecode(dur, fps)}</span>
       </span>
       <div className="transport-mid">

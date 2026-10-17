@@ -97,6 +97,8 @@ Use a recent Chrome or Edge for the widest codec support. Firefox and Safari wor
 
 **iPhone videos (HEVC `.mov`)** import in any browser. When the browser can play the clip, it is used as is. When it can't, ClipForge converts a copy on import, showing progress with a Cancel button: first with hardware decoding through WebCodecs, otherwise with ffmpeg compiled to WebAssembly (`@ffmpeg/core`, served from the app itself and loaded only when needed). The converted copy is what gets saved with the draft, so a clip is only converted once.
 
+**Playback on phones** shows the main video directly instead of copying each frame onto the canvas. The video leads and the timeline clock follows it. Pieces of the same file share one video element, so a plain cut plays straight through without a seek or a restart; a jump cut is pre-rolled on one spare element. Panels that follow the playhead update a few times a second during playback rather than every frame.
+
 ## Architecture
 
 ```

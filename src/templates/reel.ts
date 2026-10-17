@@ -1,4 +1,5 @@
-import type { Asset, Project } from '../model/types';
+import type { Asset, GraphicLook, Project } from '../model/types';
+import type { SportId } from './sports';
 import { buildBroadcastReel } from './broadcast';
 
 export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'team' | 'lineup';
@@ -73,8 +74,6 @@ export const REEL_STYLES: {
   },
 ];
 
-export const POSITIONS = ['Outside Hitter', 'Opposite', 'Middle Blocker', 'Setter', 'Libero', 'Defensive Specialist', 'Right Side'];
-export const SKILL_TAGS = ['Kill', 'Ace', 'Block', 'Dig', 'Set', 'Serve receive', 'Save'];
 
 export interface RosterPlayer {
   key: string;
@@ -115,6 +114,11 @@ export interface ReelInfo {
   logo?: string;
   /** Opponent's logo as a PNG data URL. */
   oppLogo?: string;
+  sport?: SportId;
+  /** Graphics package style. */
+  look?: GraphicLook;
+  /** Bring still photos to life with depth parallax (default on). */
+  livePhotos?: boolean;
   /** Featured player's photo or clip for this project, and whether to cut them out of the background. */
   photo?: string;
   photoCutout?: boolean;
@@ -148,6 +152,8 @@ export interface ReelAssets {
   photo?: string;
   /** Photos with transparent backgrounds, shown as cut-outs. */
   cutouts?: string[];
+  /** Depth maps (asset ids) by photo asset id, for living photos. */
+  depths?: Record<string, string>;
 }
 
 export interface ReelInput {

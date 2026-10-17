@@ -9,6 +9,7 @@ import { CURVE_PRESETS, durationForSpan } from '../model/timing';
 import type { Asset, Clip, GraphicSpec, GraphicType, Project, TransitionKind } from '../model/types';
 import { uid } from '../utils';
 import { playedSets, sides } from './match';
+import { finalTotals, sportOf } from './sports';
 import type { ReelInfo, ReelInput, ReelStyle, RosterPlayer } from './reel';
 import { REEL_STYLES } from './reel';
 import { barFitter, upper } from './shared';
@@ -77,9 +78,17 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
   const cutouts = new Set(cards.cutouts ?? []);
   const [usName, themName] = sides(input, true);
 
-  const spec = (type: GraphicType, text: Record<string, string>, extra: Partial<GraphicSpec> = {}): GraphicSpec => ({ type, colors: info.colors, text, logo, oppLogo, ...extra });
+  const sport = sportOf(info.sport);
+  const spec = (type: GraphicType, text: Record<string, string>, extra: Partial<GraphicSpec> = {}): GraphicSpec => ({ type, colors: info.colors, text, logo, oppLogo, look: info.look, ...extra });
   const mediaSpec = (assetId?: string): Partial<GraphicSpec> =>
-    assetId && assets[assetId] ? { media: assets[assetId].kind === 'video' ? 'video' : 'image', cutout: cutouts.has(assetId) } : {};
+    assetId && assets[assetId]
+      ? {
+          media: assets[assetId].kind === 'video' ? 'video' : 'image',
+          cutout: cutouts.has(assetId),
+          // Still photos with a depth map come to life.
+          depth: assets[assetId].kind === 'image' && !cutouts.has(assetId) && cards.depths?.[assetId] && assets[cards.depths[assetId]] ? cards.depths[assetId] : undefined,
+        }
+      : {};
 
   let p: Project = { ...createProject(W, H, team ? `${name} ${style.title}` : `${name} ${input.style === 'spotlight' ? info.headline || 'Spotlight' : 'Highlights'}`), markers: [] };
   const overlays: Clip[] = [];
@@ -185,7 +194,7 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
     const m = rc.score?.match(/^\s*(\d{1,2})\s*[-–:]\s*(\d{1,2})\s*$/);
     if (m) {
       const [us, them] = sides(input);
-      overlays.push(createGraphicClip(spec('scoreBug', { usName: us, themName: them, us: m[1], them: m[2], set: rc.set ? String(rc.set) : '' }), start, clip.duration, `${m[1]}-${m[2]}`));
+      overlays.push(createGraphicClip(spec('scoreBug', { usName: us, themName: them, us: m[1], them: m[2], set: rc.set ? String(rc.set) : '', periodLabel: sport.scoring.short }), start, clip.duration, `${m[1]}-${m[2]}`));
     }
   });
 
@@ -201,10 +210,9 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
   const sets = playedSets(info);
   if (sets.length && input.style !== 'lineup') {
     stinger();
-    const won = sets.filter(([a, b]) => a > b).length;
-    const lost = sets.length - won;
-    const result = won > lost ? `${usName} win ${won}-${lost}` : won < lost ? `${themName} win ${lost}-${won}` : `Tied ${won}-${lost}`;
-    full('final', { usName, themName, result }, fit(5), { sets }, 'Final');
+    const [ours, theirs] = finalTotals(sport, sets);
+    const result = ours > theirs ? `${usName} win ${ours}-${theirs}` : ours < theirs ? `${themName} win ${theirs}-${ours}` : `Tied ${ours}-${theirs}`;
+    full('final', { usName, themName, result, periodPrefix: sport.scoring.result === 'sets' ? 'S' : sport.scoring.short === 'INN' ? '' : sport.scoring.short[0], periodLabel: sport.scoring.short }, fit(5), { sets, scoring: sport.scoring.result }, 'Final');
   }
 
   // ---------- closer ----------

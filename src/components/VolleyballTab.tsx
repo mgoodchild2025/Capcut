@@ -131,7 +131,7 @@ export function VolleyballTab() {
         </>
       )}
 
-      <h5 className="lib-h">Volleyball text</h5>
+      <h5 className="lib-h">Game text</h5>
       <div className="text-grid">
         {VB_TEXT.map((t) => (
           <button key={t.label} className="text-tpl vb-text" onClick={() => addText(t.style)}>

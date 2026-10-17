@@ -1,4 +1,4 @@
-import type { Asset, Project } from '../model/types';
+import type { Asset, Clip, Project } from '../model/types';
 import { uid } from '../utils';
 import { readDraftRaw, saveDraftRaw } from './persist';
 
@@ -26,6 +26,27 @@ export class ProjectFileError extends Error {
   }
 }
 
+/** Every asset a clip needs: its own media and, for graphics, logos, depth maps and roster photos. */
+export function mediaRefs(c: Clip): string[] {
+  const g = c.graphic;
+  return [c.assetId, g?.logo, g?.oppLogo, g?.depth, ...(g?.players ?? []).map((p) => p.photo)].filter((x): x is string => !!x);
+}
+
+function remapClip(c: Clip, map: (id: string) => string): Clip {
+  const g = c.graphic;
+  return {
+    ...c,
+    assetId: c.assetId && map(c.assetId),
+    graphic: g && {
+      ...g,
+      logo: g.logo && map(g.logo),
+      oppLogo: g.oppLogo && map(g.oppLogo),
+      depth: g.depth && map(g.depth),
+      players: g.players?.map((p) => ({ ...p, photo: p.photo && map(p.photo) })),
+    },
+  };
+}
+
 const fileName = (name: string) => `${name.replace(/[^\w\- ]+/g, '').trim() || 'project'}${PROJECT_EXT}`;
 
 /** Packs a stored draft into a single file. */
@@ -36,8 +57,8 @@ export async function draftToFile(id: string): Promise<File> {
 }
 
 export function packProject(raw: { project: Project; thumbnail?: string; assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] }): File {
-  // Only media the timeline uses; deleted clips can leave orphans behind.
-  const used = new Set(raw.project.clips.map((c) => c.assetId).filter(Boolean));
+  // Only media the timeline uses (clips, and what graphics draw); deleted clips can leave orphans behind.
+  const used = new Set(raw.project.clips.flatMap(mediaRefs));
   const assets = raw.assets.filter((a) => used.has(a.meta.id));
   const header: Header = {
     app: 'ClipForge',
@@ -87,7 +108,7 @@ export async function importProjectFile(file: Blob): Promise<string> {
     ...project,
     id: uid('p_'),
     updatedAt: now,
-    clips: project.clips.map((c) => (c.assetId && ids.has(c.assetId) ? { ...c, assetId: ids.get(c.assetId) } : c)),
+    clips: project.clips.map((c) => remapClip(c, (id) => ids.get(id) ?? id)),
   };
   await saveDraftRaw(
     next,

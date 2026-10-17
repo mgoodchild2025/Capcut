@@ -208,4 +208,36 @@ describe('broadcast reels', () => {
     expect(main(p)[1].assetId).toBeUndefined();
     expect(graphics(p, 'scoreBug').length).toBe(0);
   });
+
+  it('scores points-based sports by totals, with their own period names', () => {
+    const quarters: [string, string][] = [
+      ['18', '12'],
+      ['14', '20'],
+      ['22', '15'],
+      ['16', '19'],
+    ];
+    const p = buildReel(input('recruiting', { info: { ...info, sport: 'basketball', sets: quarters } }), assets);
+    const fin = graphics(p, 'final')[0].graphic!;
+    expect(fin.scoring).toBe('points');
+    expect(fin.text.periodPrefix).toBe('Q');
+    // 70-66 on points, though they won only two of four quarters.
+    expect(fin.text.result).toBe('ROCKETS 17 ELITE win 70-66');
+    expect(graphics(p, 'scoreBug')[0].graphic!.text.periodLabel).toBe('QTR');
+  });
+
+  it('handles innings and a loss', () => {
+    const innings: [string, string][] = Array.from({ length: 9 }, (_, i) => [String(i % 3 === 0 ? 1 : 0), String(i % 4 === 0 ? 1 : 0)]);
+    const p = buildReel(input('recap', { info: { ...info, name: 'Rockets', sport: 'baseball', sets: [...innings.slice(0, 8), ['0', '2']] } }), assets);
+    const fin = graphics(p, 'final')[0].graphic!;
+    expect(fin.sets!.length).toBe(9);
+    expect(fin.text.periodPrefix).toBe('');
+    expect(fin.text.result).toBe('WESTSIDE STORM win 4-3');
+  });
+
+  it('keeps volleyball on sets won', () => {
+    const p = buildReel(input('recap', { info: { ...info, name: 'Rockets' } }), assets);
+    const fin = graphics(p, 'final')[0].graphic!;
+    expect(fin.scoring).toBe('sets');
+    expect(fin.text.result).toBe('ROCKETS win 2-1');
+  });
 });

@@ -3,7 +3,8 @@
  * player cards, score bug, stat/roster/final boards and a closer. Everything is a pure function of
  * the clip's local time, so the preview and the export draw exactly the same frames.
  */
-import type { Clip, GraphicSpec } from '../model/types';
+import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
+import { drawLivePhoto, livePhotoLayers } from './livePhoto';
 
 export type ImageLookup = (assetId: string) => CanvasImageSource | null;
 
@@ -21,9 +22,13 @@ interface G {
   /** Text colour that reads on c2. */
   ink: string;
   spec: GraphicSpec;
+  look: GraphicLook;
+  /** Brushed-gold fill for the championship look. */
+  metal: CanvasGradient | null;
   img: ImageLookup;
-  /** The clip's own media (player photo or clip). */
+  /** The clip's own media (player photo or clip), and its asset id. */
   media: CanvasImageSource | null;
+  mediaId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,12 +76,27 @@ function inkFor(hex: string) {
 const DISPLAY = '"Big Shoulders Display", Impact, "Arial Narrow", sans-serif';
 const SANS = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
 
-function font(ctx: CanvasRenderingContext2D, size: number, weight = 900, family = DISPLAY) {
-  ctx.font = `${weight} ${Math.max(1, size)}px ${family}`;
+/**
+ * Settings of the look being drawn. Graphics draw synchronously, one at a time, so these are set
+ * at the start of drawGraphic and every helper picks them up.
+ */
+let LOOK: GraphicLook = 'broadcast';
+/** Headline family: condensed sports lettering, or clean sans for the classic look. */
+let HEAD = DISPLAY;
+/** How much plates lean (classic is square). */
+let SKEW = 1;
+
+function font(ctx: CanvasRenderingContext2D, size: number, weight = 900, family = HEAD) {
+  // The classic look's sans is set a notch lighter than the display face.
+  const w = family === SANS && weight === 900 && LOOK === 'classic' ? 800 : weight;
+  ctx.font = `${w} ${Math.max(1, size)}px ${family}`;
 }
 
+/** Fill for accent plates and highlights: the team accent, or brushed gold. */
+const accent = (g: G) => (g.metal ?? g.c2);
+
 /** Largest size (up to `max`) at which `text` fits in `maxW`, allowing for letter spacing of `track` em. */
-function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number, max: number, weight = 900, family = DISPLAY, track = 0) {
+function fit(ctx: CanvasRenderingContext2D, text: string, maxW: number, max: number, weight = 900, family = HEAD, track = 0) {
   font(ctx, max, weight, family);
   const w = ctx.measureText(text).width + text.length * max * track;
   return w <= maxW ? max : Math.max(8, (max * maxW) / w);
@@ -88,6 +108,7 @@ function tracking(ctx: CanvasRenderingContext2D, px: number) {
 
 /** Parallelogram leaning right by `skew` px over its height. */
 function para(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, skew: number) {
+  skew *= SKEW;
   ctx.beginPath();
   ctx.moveTo(x + skew, y);
   ctx.lineTo(x + w + skew, y);
@@ -126,7 +147,8 @@ function headline(
   const { ctx } = g;
   const reveal = opts.reveal ?? 1;
   if (reveal <= 0 || !text) return;
-  font(ctx, size, opts.weight ?? 900, opts.family ?? DISPLAY);
+  const family = opts.family ?? HEAD;
+  font(ctx, size, opts.weight ?? 900, family);
   tracking(ctx, opts.track ?? 0);
   const w = ctx.measureText(text).width;
   const align = opts.align ?? 'center';
@@ -140,18 +162,42 @@ function headline(
   const rise = (1 - eOut(reveal)) * h * 1.1;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
+  const color = opts.color ?? '#fff';
   if (opts.shadow !== false) {
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = size * 0.12;
-    ctx.shadowOffsetY = size * 0.04;
+    if (LOOK === 'neon') {
+      // Neon tubes: a coloured glow around bright lettering.
+      ctx.shadowColor = rgba(g.c2, 0.95);
+      ctx.shadowBlur = size * 0.28;
+    } else {
+      ctx.shadowColor = 'rgba(0,0,0,0.45)';
+      ctx.shadowBlur = size * 0.12;
+      ctx.shadowOffsetY = size * 0.04;
+    }
   }
-  if (opts.stroke) {
+  const stroke = opts.stroke ?? (LOOK === 'championship' && size > g.S * 0.09 && color === '#fff' ? '#e8c35a' : undefined);
+  if (stroke) {
     ctx.lineWidth = Math.max(1, size * 0.035);
-    ctx.strokeStyle = opts.stroke;
+    ctx.strokeStyle = stroke;
     ctx.strokeText(text, left, y + rise);
   }
-  ctx.fillStyle = opts.color ?? '#fff';
+  if (g.metal && color === g.c2) {
+    // Gold lettering: a vertical sheen across this line of text.
+    const gr = ctx.createLinearGradient(0, y + rise - size * 0.8, 0, y + rise + size * 0.1);
+    gr.addColorStop(0, '#fff6d1');
+    gr.addColorStop(0.45, '#e9bf4f');
+    gr.addColorStop(0.55, '#b8861c');
+    gr.addColorStop(1, '#f5d77a');
+    ctx.fillStyle = gr;
+  } else {
+    ctx.fillStyle = color;
+  }
   ctx.fillText(text, left, y + rise);
+  if (LOOK === 'neon' && opts.shadow !== false) {
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = Math.max(1, size * 0.018);
+    ctx.strokeStyle = rgba(g.c2, 0.9);
+    ctx.strokeText(text, left, y + rise);
+  }
   ctx.restore();
   const sheen = opts.sheen;
   if (sheen !== undefined && sheen > 0 && sheen < 1) {
@@ -160,7 +206,7 @@ function headline(
     const sw = w + pad * 2;
     const sh = h + pad * 2;
     const { canvas, c } = scratchCanvas(sw, sh);
-    font(c, size, opts.weight ?? 900, opts.family ?? DISPLAY);
+    font(c, size, opts.weight ?? 900, family);
     tracking(c, opts.track ?? 0);
     c.textBaseline = 'alphabetic';
     c.fillStyle = '#fff';
@@ -199,8 +245,131 @@ const hash = (n: number) => {
   return s - Math.floor(s);
 };
 
-/** The moving backdrop of full-screen graphics: team gradient, light bands, halftone, rays. */
+/** The moving backdrop of full-screen graphics, in the style of the look. */
 function backdrop(g: G, strength = 1) {
+  if (g.look === 'neon') return neonBackdrop(g);
+  if (g.look === 'classic') return classicBackdrop(g);
+  if (g.look === 'championship') return championshipBackdrop(g);
+  broadcastBackdrop(g, strength);
+}
+
+/** Classic: a quiet studio gradient with a single accent rule. */
+function classicBackdrop(g: G) {
+  const { ctx, W, H, S, c1 } = g;
+  const gr = ctx.createLinearGradient(0, 0, 0, H);
+  gr.addColorStop(0, shade(c1, -0.55));
+  gr.addColorStop(1, shade(c1, -0.8));
+  ctx.fillStyle = gr;
+  ctx.fillRect(0, 0, W, H);
+  const rg = ctx.createRadialGradient(W / 2, H * 0.35, 0, W / 2, H * 0.35, S);
+  rg.addColorStop(0, 'rgba(255,255,255,0.07)');
+  rg.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = rg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = g.c2;
+  ctx.fillRect(0, H - S * 0.012, W, S * 0.012);
+}
+
+/** Neon: black with a perspective grid racing toward the viewer and a glowing horizon. */
+function neonBackdrop(g: G) {
+  const { ctx, W, H, S, t, c1, c2 } = g;
+  ctx.fillStyle = '#04050a';
+  ctx.fillRect(0, 0, W, H);
+  const horizon = H * 0.62;
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, rgba(c1, 0.25));
+  sky.addColorStop(1, rgba(c2, 0.18));
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, horizon);
+  ctx.save();
+  ctx.strokeStyle = rgba(c2, 0.55);
+  ctx.shadowColor = rgba(c2, 0.9);
+  ctx.shadowBlur = S * 0.012;
+  ctx.lineWidth = Math.max(1, S * 0.0025);
+  // Floor lines fanning out from the vanishing point.
+  for (let i = -12; i <= 12; i++) {
+    ctx.beginPath();
+    ctx.moveTo(W / 2 + i * W * 0.012, horizon);
+    ctx.lineTo(W / 2 + i * W * 0.22, H);
+    ctx.stroke();
+  }
+  // Cross lines moving toward the viewer.
+  for (let i = 0; i < 12; i++) {
+    const k = (i + ((t * 0.9) % 1)) / 12;
+    const y = horizon + (H - horizon) * k * k;
+    ctx.globalAlpha = k;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.fillStyle = c2;
+  ctx.shadowColor = c2;
+  ctx.shadowBlur = S * 0.04;
+  ctx.fillRect(0, horizon - 1, W, Math.max(2, S * 0.003));
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  for (let y = 0; y < H; y += Math.max(3, S * 0.005)) ctx.fillRect(0, y, W, 1);
+}
+
+/** Championship: dark arena, a gold spotlight from above, slow rays and twinkling sparks. */
+function championshipBackdrop(g: G) {
+  const { ctx, W, H, S, t, c1 } = g;
+  const base = ctx.createLinearGradient(0, 0, 0, H);
+  base.addColorStop(0, shade(c1, -0.7));
+  base.addColorStop(1, '#07060a');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, W, H);
+  const spot = ctx.createRadialGradient(W / 2, -H * 0.1, 0, W / 2, -H * 0.1, Math.hypot(W, H) * 0.75);
+  spot.addColorStop(0, 'rgba(255,214,120,0.38)');
+  spot.addColorStop(0.5, 'rgba(255,190,80,0.08)');
+  spot.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = spot;
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(W / 2, -H * 0.1);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 7; i++) {
+    const a = -0.5 + i * 0.17 + Math.sin(t * 0.4 + i) * 0.03;
+    ctx.save();
+    ctx.rotate(Math.PI / 2 + a);
+    const gr = ctx.createLinearGradient(0, 0, Math.hypot(W, H), 0);
+    gr.addColorStop(0, 'rgba(255,220,140,0.12)');
+    gr.addColorStop(1, 'rgba(255,220,140,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.hypot(W, H), -S * 0.08);
+    ctx.lineTo(Math.hypot(W, H), S * 0.08);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+  // Sparks drifting up and twinkling.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 46; i++) {
+    const x = hash(i) * W;
+    const y = H - ((hash(i + 50) * H + t * S * (0.03 + hash(i + 7) * 0.05)) % H);
+    const tw = 0.4 + 0.6 * Math.abs(Math.sin(t * (2 + hash(i + 3) * 3) + i));
+    const r = S * (0.002 + hash(i + 9) * 0.004);
+    ctx.fillStyle = `rgba(255,224,150,${0.75 * tw})`;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  const v = ctx.createRadialGradient(W / 2, H / 2, S * 0.3, W / 2, H / 2, Math.hypot(W, H) * 0.62);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/** Broadcast: team gradient, drifting light bands, halftone, scan lines. */
+function broadcastBackdrop(g: G, strength = 1) {
   const { ctx, W, H, S, t, c1, c2 } = g;
   const base = ctx.createLinearGradient(0, 0, W, H);
   base.addColorStop(0, shade(c1, -0.82));
@@ -267,6 +436,7 @@ function backdrop(g: G, strength = 1) {
 
 /** Streaks of light racing across, used on opens and cards. */
 function streaks(g: G, y0: number, y1: number, count = 5, alpha = 0.5) {
+  if (g.look === 'classic') return;
   const { ctx, W, S, t, c2 } = g;
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
@@ -329,6 +499,37 @@ function logoSlam(g: G, id: string | undefined, cx: number, cy: number, size: nu
   const p = seg(g.t, start, start + 0.55);
   if (p <= 0) return false;
   const { ctx } = g;
+  if (g.look === 'classic') {
+    // Understated: a gentle rise into place.
+    const k = eOut(seg(g.t, start, start + 0.8));
+    return logoAt(g, id, cx, cy + (1 - k) * size * 0.08, size * lerp(0.94, 1, k), k, 0);
+  }
+  if (g.look === 'championship') {
+    // Anamorphic flare as the logo lands.
+    const f = seg(g.t, start + 0.2, start + 1.4);
+    if (f > 0 && f < 1) {
+      const a = Math.sin(f * Math.PI);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createLinearGradient(cx - g.W * 0.6, 0, cx + g.W * 0.6, 0);
+      gr.addColorStop(0, 'rgba(255,210,120,0)');
+      gr.addColorStop(0.5, `rgba(255,236,190,${0.8 * a})`);
+      gr.addColorStop(1, 'rgba(255,210,120,0)');
+      ctx.fillStyle = gr;
+      ctx.fillRect(cx - g.W * 0.6, cy - g.S * 0.006, g.W * 1.2, g.S * 0.012);
+      for (const [k, r] of [
+        [0.35, 0.05],
+        [-0.25, 0.03],
+        [0.6, 0.02],
+      ]) {
+        ctx.fillStyle = `rgba(255,220,150,${0.25 * a})`;
+        ctx.beginPath();
+        ctx.arc(cx + g.W * k * (f - 0.5) * 2, cy + g.S * k * 0.1, g.S * r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
   const s = lerp(1.9, 1, eBack(p));
   const ring = seg(g.t, start + 0.18, start + 1.0);
   if (ring > 0 && ring < 1) {
@@ -363,13 +564,18 @@ function logoSlam(g: G, id: string | undefined, cx: number, cy: number, size: nu
 /** Two angled panels racing across: used to wipe full-screen graphics in and out. */
 function panelWipe(g: G, p: number, reverse = false) {
   if (p <= 0 || p >= 1) return;
-  const { ctx, W, H, c1, c2 } = g;
+  const { ctx, W, H, c1 } = g;
+  if (g.look === 'classic') {
+    ctx.fillStyle = shade(c1, -0.85, eInOut(p));
+    ctx.fillRect(0, 0, W, H);
+    return;
+  }
   const sk = H * 0.35;
   const span = W + sk * 2;
   const a = eInOut(p);
   for (const [i, col] of [
-    [0, c2],
-    [1, shade(c1, -0.2)],
+    [0, accent(g)],
+    [1, g.look === 'neon' ? '#04050a' : shade(c1, -0.2)],
   ] as const) {
     const lag = i * 0.12;
     const k = clamp01((a - lag) / (1 - lag));
@@ -419,7 +625,7 @@ function drawOpen(g: G) {
     tracking(ctx, 0);
     const ky = titleY - size * lines.length * 0.95 - ks * 1.6;
     ctx.save();
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     para(ctx, W / 2 - kw / 2 - ks * 0.4, ky - ks * 0.95, kw * kp, ks * 1.9, ks * 0.4);
     ctx.fill();
     ctx.restore();
@@ -432,7 +638,7 @@ function drawOpen(g: G) {
   // Underline bar grows from the centre.
   const bar = eExpo(seg(t, 0.9, 1.5));
   if (bar > 0) {
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     ctx.fillRect(W / 2 - (W * 0.32 * bar) / 2, titleY + size * 0.22, W * 0.32 * bar, Math.max(3, S * 0.008));
   }
   const sub = (tx.sub || '').toUpperCase();
@@ -452,12 +658,21 @@ function drawOpen(g: G) {
 function drawStinger(g: G) {
   const { ctx, W, H, S, t, d, c1, c2 } = g;
   const p = t / d; // 0..1, fully covered at 0.5
-  const sk = H * 0.4;
-  const bars: [string, number][] = [
-    [c2, 0],
-    ['#ffffff', 0.07],
-    [shade(c1, -0.35), 0.14],
-  ];
+  const sk = H * 0.4 * SKEW;
+  const bars: [string | CanvasGradient, number][] =
+    g.look === 'classic'
+      ? [[shade(c1, -0.45), 0]]
+      : g.look === 'neon'
+        ? [
+            [c2, 0],
+            ['#04050a', 0.07],
+            [shade(c1, -0.6), 0.14],
+          ]
+        : [
+            [accent(g), 0],
+            ['#ffffff', 0.07],
+            [shade(c1, -0.35), 0.14],
+          ];
   for (const [col, lag] of bars) {
     // In: leading edge crosses left to right by p = 0.45; out: trailing edge follows from 0.55.
     const inK = eInOut(clamp01((p - lag) / 0.45));
@@ -504,7 +719,7 @@ function drawLowerThird(g: G) {
     ctx.save();
     ctx.translate(x0 + nb / 2, y0 + h / 2);
     ctx.scale(pn, pn);
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     para(ctx, -nb / 2, -h / 2, nb, h, sk * 0.6);
     ctx.fill();
     if (!logoAt(g, spec.logo && !num ? spec.logo : undefined, 0, 0, h * 0.8)) {
@@ -604,7 +819,7 @@ function drawScoreBug(g: G) {
     }
     label(g, name.toUpperCase().slice(0, 9), x + logoW + rowH * 0.3, ry + rowH / 2 + 1, rowH * 0.46, '#ffffff', 'left', 800, 0.06);
     // Score cell, highlighted for the team ahead.
-    ctx.fillStyle = lead ? g.c2 : 'rgba(255,255,255,0.08)';
+    ctx.fillStyle = lead ? accent(g) : 'rgba(255,255,255,0.08)';
     ctx.fillRect(x + logoW + nameW, ry, scoreW, rowH);
     const pop = lead ? eBack(seg(t, 0.35, 0.7)) : 1;
     ctx.save();
@@ -620,7 +835,7 @@ function drawScoreBug(g: G) {
   // Set column.
   ctx.fillStyle = shade(g.c1, -0.45);
   ctx.fillRect(x + w - setW, y, setW, h);
-  label(g, 'SET', x + w - setW / 2, y + h * 0.3, rowH * 0.36, rgba(g.c2, 1), 'center', 800, 0.2);
+  label(g, tx.periodLabel || 'SET', x + w - setW / 2, y + h * 0.3, rowH * 0.36, rgba(g.c2, 1), 'center', 800, 0.2);
   headline(g, tx.set || '–', x + w - setW / 2, y + h * 0.82, rowH * 0.95, { color: '#fff', shadow: false });
   ctx.restore();
 }
@@ -684,7 +899,11 @@ function drawPlayerCard(g: G) {
     para(ctx, win.x + (portrait ? 0 : win.w - ww), win.y, ww + win.sk, win.h, win.sk);
     ctx.clip();
     if (media) {
-      cover(ctx, media, win.x, win.y, win.w + win.sk, win.h, lerp(1.12, 1.0, eOut(seg(t, 0, g.d))));
+      // A living photo moves through its depth layers; otherwise a slow push on the flat photo.
+      const depth = spec.depth && !spec.still && !(media instanceof HTMLVideoElement) ? g.img(spec.depth) : null;
+      const live = depth && g.mediaId ? livePhotoLayers(`${g.mediaId}|${spec.depth}`, media, depth) : null;
+      if (live) drawLivePhoto(ctx, live, win.x, win.y, win.w + win.sk, win.h, clamp01(t / g.d));
+      else cover(ctx, media, win.x, win.y, win.w + win.sk, win.h, lerp(1.12, 1.0, eOut(seg(t, 0, g.d))));
       // Grade towards team colours and darken the edge text sits on.
       const gr = portrait ? ctx.createLinearGradient(0, win.y + win.h * 0.55, 0, win.y + win.h) : ctx.createLinearGradient(win.x, 0, win.x + win.w * 0.35, 0);
       gr.addColorStop(0, 'rgba(0,0,0,0)');
@@ -709,12 +928,12 @@ function drawPlayerCard(g: G) {
     ctx.restore();
     // Leading edge.
     if (open < 1) {
-      ctx.fillStyle = g.c2;
+      ctx.fillStyle = accent(g);
       const ex = portrait ? win.x + ww : win.x + win.w - ww;
       para(ctx, ex - S * 0.008, win.y, S * 0.016, win.h, win.sk);
       ctx.fill();
     } else {
-      ctx.fillStyle = g.c2;
+      ctx.fillStyle = accent(g);
       if (portrait) ctx.fillRect(0, win.y + win.h - S * 0.008, W, S * 0.008);
       else para(ctx, win.x - S * 0.006, 0, S * 0.012, H, win.sk), ctx.fill();
     }
@@ -760,7 +979,7 @@ function drawPlayerCard(g: G) {
     const pw = ctx.measureText(pos).width + ps * 2;
     tracking(ctx, 0);
     const px = portrait ? left - pw / 2 : left;
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     para(ctx, px, y + ps * 0.2, pw * pp, ps * 1.8, ps * 0.4);
     ctx.fill();
     if (pp > 0.7) label(g, pos, px + ps, y + ps * 1.1, ps, g.ink, 'left', 800, 0.16);
@@ -790,7 +1009,7 @@ function drawStats(g: G) {
   const ts = fit(ctx, title, W * 0.8, S * 0.11);
   // Title plate.
   ctx.save();
-  ctx.fillStyle = g.c2;
+  ctx.fillStyle = accent(g);
   font(ctx, ts, 900);
   const tw = ctx.measureText(title).width + ts * 0.8;
   para(ctx, W / 2 - tw / 2, top - ts * 0.85, tw * tp, ts * 1.05, ts * 0.25);
@@ -822,7 +1041,7 @@ function drawStats(g: G) {
     ctx.fillStyle = gr;
     para(ctx, rx, y + rh * 0.1, rw, rh * 0.8, rh * 0.18);
     ctx.fill();
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     para(ctx, rx, y + rh * 0.1, rh * 0.09, rh * 0.8, rh * 0.18);
     ctx.fill();
     // Value counts up.
@@ -904,14 +1123,14 @@ function drawRoster(g: G) {
     // Name bar.
     ctx.fillStyle = 'rgba(8,9,14,0.92)';
     ctx.fillRect(0, th * 0.78, tw, th * 0.22);
-    ctx.fillStyle = g.c2;
+    ctx.fillStyle = accent(g);
     ctx.fillRect(0, th * 0.78, tw, Math.max(2, th * 0.015));
     const nm = (pl.name || '').toUpperCase();
     const last = nm.split(/\s+/).slice(-1)[0] || nm;
     headline(g, last, tw / 2, th * 0.95, fit(ctx, last, tw * 0.86, th * 0.13), { color: '#fff', shadow: false });
     if (pl.number) {
       const bs = tw * 0.26;
-      ctx.fillStyle = g.c2;
+      ctx.fillStyle = accent(g);
       ctx.fillRect(0, 0, bs, bs * 0.8);
       headline(g, pl.number.replace('#', ''), bs / 2, bs * 0.66, fit(ctx, pl.number.replace('#', ''), bs * 0.85, bs * 0.62), { color: g.ink, shadow: false });
     }
@@ -925,8 +1144,12 @@ function drawFinal(g: G) {
   const { ctx, W, H, S, t, portrait, spec } = g;
   backdrop(g);
   const sets = spec.sets ?? [];
-  const won = sets.filter(([a, b]) => a > b).length;
-  const lost = sets.length - won;
+  // Sets won, or total points (goals, runs) over the periods.
+  const [won, lost] =
+    spec.scoring === 'points'
+      ? sets.reduce<[number, number]>(([x, y], [a, b]) => [x + a, y + b], [0, 0])
+      : [sets.filter(([a, b]) => a > b).length, sets.filter(([a, b]) => b > a).length];
+  const prefix = spec.text.periodPrefix ?? 'S';
   const names = [spec.text.usName || 'HOME', spec.text.themName || 'AWAY'];
   const logos = [spec.logo, spec.oppLogo];
   const totals = [won, lost];
@@ -948,7 +1171,7 @@ function drawFinal(g: G) {
         ctx.fillStyle = win ? shade(g.c1, -0.2) : 'rgba(20,22,30,0.92)';
         ctx.fillRect(x0, y, bw, bh);
         if (win) {
-          ctx.fillStyle = g.c2;
+          ctx.fillStyle = accent(g);
           ctx.fillRect(x0, y, S * 0.014, bh);
         }
         if (!logoAt(g, logos[i], x0 + bh * 0.55, y + bh / 2, bh * 0.7)) {
@@ -963,13 +1186,13 @@ function drawFinal(g: G) {
         const ns = Math.min(fit(ctx, lineA, maxW, bh * 0.36), lineB ? fit(ctx, lineB, maxW, bh * 0.36) : Infinity);
         headline(g, lineA, x0 + bh * 1.1, y + bh * (lineB ? 0.47 : 0.62), ns, { align: 'left', shadow: false });
         if (lineB) headline(g, lineB, x0 + bh * 1.1, y + bh * 0.47 + ns * 0.98, ns, { align: 'left', shadow: false });
-        ctx.fillStyle = win ? g.c2 : 'rgba(255,255,255,0.1)';
+        ctx.fillStyle = win ? accent(g) : 'rgba(255,255,255,0.1)';
         ctx.fillRect(x0 + bw - bh * 0.95, y, bh * 0.95, bh);
         const cp = eBack(seg(t, 1.1, 1.5));
         ctx.save();
         ctx.translate(x0 + bw - bh * 0.475, y + bh * 0.78);
         ctx.scale(Math.max(0.01, cp), Math.max(0.01, cp));
-        headline(g, String(totals[i]), 0, 0, bh * 0.75, { color: win ? g.ink : '#fff', shadow: false });
+        headline(g, String(totals[i]), 0, 0, fit(ctx, String(totals[i]), bh * 0.8, bh * 0.75), { color: win ? g.ink : '#fff', shadow: false });
         ctx.restore();
         ctx.restore();
       }
@@ -985,7 +1208,7 @@ function drawFinal(g: G) {
       ctx.globalAlpha *= tp;
       ctx.fillStyle = 'rgba(10,11,16,0.75)';
       ctx.fillRect(x0, y, bw, rh * 3);
-      label(g, 'SET', x0 + cw / 2, y + rh / 2, S * 0.03, 'rgba(255,255,255,0.6)', 'center', 800, 0.18);
+      label(g, spec.text.periodLabel || (prefix === 'S' ? 'SET' : prefix || 'INN'), x0 + cw / 2, y + rh / 2, S * 0.03, 'rgba(255,255,255,0.6)', 'center', 800, 0.18);
       for (let i = 0; i < 2; i++) {
         if (!logoAt(g, logos[i], x0 + cw / 2, y + rh * (1.5 + i), rh * 0.62)) label(g, names[i].slice(0, 3).toUpperCase(), x0 + cw / 2, y + rh * (1.5 + i), S * 0.03, '#fff', 'center', 800, 0.1);
       }
@@ -995,7 +1218,7 @@ function drawFinal(g: G) {
         for (let i = 0; i < 2; i++) {
           const mine = s2[i];
           const theirs = s2[1 - i];
-          headline(g, String(mine), cx, y + rh * (1.5 + i) + rh * 0.24, rh * 0.62, { color: mine > theirs ? g.c2 : 'rgba(255,255,255,0.55)', shadow: false });
+          headline(g, String(mine), cx, y + rh * (1.5 + i) + rh * 0.24, Math.min(rh * 0.62, cw * 0.8), { color: mine > theirs ? g.c2 : 'rgba(255,255,255,0.55)', shadow: false });
         }
       });
       ctx.restore();
@@ -1017,7 +1240,8 @@ function drawFinal(g: G) {
   const rowH = S * 0.13;
   const x0 = (W - bw) / 2;
   const y0 = top + S * 0.09;
-  const setCol = rowH * 0.85;
+  // Many periods (innings) get narrower columns so the names keep their room.
+  const setCol = Math.min(rowH * 0.85, (bw * 0.5) / Math.max(1, sets.length));
   for (let i = 0; i < 2; i++) {
     const p = eExpo(seg(t, 0.3 + i * 0.15, 0.8 + i * 0.15));
     if (p <= 0) continue;
@@ -1028,7 +1252,7 @@ function drawFinal(g: G) {
     ctx.fillStyle = win ? shade(g.c1, -0.25) : 'rgba(20,22,30,0.92)';
     ctx.fillRect(x0, y, bw, rowH);
     if (win) {
-      ctx.fillStyle = g.c2;
+      ctx.fillStyle = accent(g);
       ctx.fillRect(x0, y, S * 0.012, rowH);
     }
     if (!logoAt(g, logos[i], x0 + rowH * 0.62, y + rowH / 2, rowH * 0.72)) {
@@ -1036,7 +1260,7 @@ function drawFinal(g: G) {
       ctx.fillRect(x0 + rowH * 0.2, y + rowH * 0.15, rowH * 0.84, rowH * 0.7);
     }
     const setsW = sets.length * setCol;
-    const nameMax = bw - rowH * 1.3 - setsW - rowH * 1.3;
+    const nameMax = bw - rowH * 1.3 - setsW - rowH * 1.3 - rowH * 0.35;
     headline(g, names[i].toUpperCase(), x0 + rowH * 1.3, y + rowH * 0.68, fit(ctx, names[i].toUpperCase(), nameMax, rowH * 0.5), { align: 'left', shadow: false });
     sets.forEach((s2, k) => {
       const mine = s2[i];
@@ -1045,22 +1269,22 @@ function drawFinal(g: G) {
       const sp = seg(t, 0.8 + k * 0.1, 1.1 + k * 0.1);
       ctx.save();
       ctx.globalAlpha *= sp;
-      headline(g, String(mine), sx, y + rowH * 0.66, rowH * 0.42, { color: mine > theirs ? '#ffffff' : 'rgba(255,255,255,0.45)', shadow: false });
+      headline(g, String(mine), sx, y + rowH * 0.66, Math.min(rowH * 0.42, setCol * 0.75), { color: mine > theirs ? '#ffffff' : 'rgba(255,255,255,0.45)', shadow: false });
       ctx.restore();
     });
-    ctx.fillStyle = win ? g.c2 : 'rgba(255,255,255,0.1)';
+    ctx.fillStyle = win ? accent(g) : 'rgba(255,255,255,0.1)';
     ctx.fillRect(x0 + bw - rowH * 1.2, y, rowH * 1.2, rowH);
     const cp = eBack(seg(t, 1.2, 1.6));
     ctx.save();
     ctx.translate(x0 + bw - rowH * 0.6, y + rowH * 0.78);
     ctx.scale(Math.max(0.01, cp), Math.max(0.01, cp));
-    headline(g, String(totals[i]), 0, 0, rowH * 0.8, { color: win ? g.ink : '#fff', shadow: false });
+    headline(g, String(totals[i]), 0, 0, fit(ctx, String(totals[i]), rowH * 1.05, rowH * 0.8), { color: win ? g.ink : '#fff', shadow: false });
     ctx.restore();
     ctx.restore();
   }
   sets.forEach((_, k) => {
     const sx = x0 + bw - rowH * 1.3 - sets.length * setCol + k * setCol + setCol / 2;
-    label(g, `S${k + 1}`, sx, y0 - S * 0.022, S * 0.022, 'rgba(255,255,255,0.6)', 'center', 800, 0.1);
+    label(g, `${prefix}${k + 1}`, sx, y0 - S * 0.022, S * 0.022, 'rgba(255,255,255,0.6)', 'center', 800, 0.1);
   });
   const result = spec.text.result || '';
   if (result) {
@@ -1080,9 +1304,10 @@ function drawCloser(g: G) {
   const { ctx, W, H, S, t, portrait, spec } = g;
   const tx = spec.text;
   backdrop(g);
-  // Rotating light rays behind the logo.
+  // Rotating light rays behind the logo (not in the understated classic look).
   const cy = portrait ? H * 0.38 : H * 0.33;
   ctx.save();
+  if (g.look === 'classic') ctx.globalAlpha = 0;
   ctx.translate(W / 2, cy);
   ctx.rotate(t * 0.15);
   ctx.globalCompositeOperation = 'lighter';
@@ -1146,7 +1371,17 @@ export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats',
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null) {
   const spec = clip.graphic;
   if (!spec) return;
-  const [c1, c2] = spec.colors;
+  const look = spec.look ?? 'broadcast';
+  const [c1, team2] = spec.colors;
+  // The championship look trades the team accent for gold.
+  const c2 = look === 'championship' ? '#e2b13c' : team2;
+  let metal: CanvasGradient | null = null;
+  if (look === 'championship') {
+    // Brushed gold: light and dark bands repeating down the frame, so any plate catches them.
+    metal = ctx.createLinearGradient(0, 0, W * 0.15, H);
+    const bands = 14;
+    for (let i = 0; i <= bands; i++) metal.addColorStop(i / bands, ['#f6dc8a', '#d9a93a', '#b47f1e', '#ecc45c'][i % 4]);
+  }
   const g: G = {
     ctx,
     W,
@@ -1157,14 +1392,26 @@ export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: nu
     d: Math.max(0.1, clip.duration),
     c1,
     c2,
-    ink: inkFor(c2),
+    ink: look === 'championship' ? '#20160a' : inkFor(c2),
     spec,
+    look,
+    metal,
     img,
     media,
+    mediaId: clip.assetId,
   };
+  LOOK = look;
+  HEAD = look === 'classic' ? SANS : DISPLAY;
+  SKEW = look === 'classic' ? 0 : 1;
   ctx.save();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  DRAW[spec.type](g);
-  ctx.restore();
+  try {
+    DRAW[spec.type](g);
+  } finally {
+    ctx.restore();
+    LOOK = 'broadcast';
+    HEAD = DISPLAY;
+    SKEW = 1;
+  }
 }

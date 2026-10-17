@@ -3,6 +3,7 @@ import { clipGain, rateAt } from '../model/timing';
 import type { Asset, Clip } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
+import { setLivePhotoReady } from './livePhoto';
 import { cssFilterFor, renderFrame, type DirectPlacement, type DrawBox, type Source } from './render';
 import { motionFor } from './render';
 
@@ -65,6 +66,8 @@ class Engine {
       }
     });
     requestAnimationFrame(this.loop);
+    // Living-photo layers build in the background; redraw when they're ready.
+    setLivePhotoReady(this.invalidate);
     // Web fonts arrive after first paint; redraw text once they do.
     document.fonts?.addEventListener?.('loadingdone', this.invalidate);
     void document.fonts?.load?.('800 40px "Big Shoulders Display"').then(this.invalidate, () => {});

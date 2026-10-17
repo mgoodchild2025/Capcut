@@ -923,6 +923,29 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
       if (a?.kind === 'image' && !replaced.has(m.assetId) && (await hasTransparency(a.url))) cutouts.push(a.id);
     }
 
+    // Living photos: a depth map for each still photo shown in a window (cut-outs already float).
+    const depths: Record<string, string> = {};
+    if (w.info.livePhotos !== false) {
+      const { depthFor } = await import('./ai/depth');
+      const stills = [...new Set(media.map((m) => finalId(m.assetId)))].filter((id) => assetOf(id)?.kind === 'image' && !cutouts.includes(id));
+      let guessed = false;
+      for (const id of stills) {
+        const a = assetOf(id)!;
+        try {
+          const res = await depthFor(await (await fetch(a.url)).blob());
+          guessed ||= res.guessed;
+          const map = await importBlob(res.png, `${baseName(a.name)} depth.png`);
+          if (map) {
+            patchAsset(map.id, { internal: true });
+            depths[id] = map.id;
+          }
+        } catch (e) {
+          console.warn('No depth map', e);
+        }
+      }
+      if (guessed) toast('Living photos are using a simpler 3D effect (the depth model needs a one-time download).');
+    }
+
     let music: Asset | null = null;
     if (w.musicId) {
       const { MUSIC } = await import('./audio/synth');
@@ -966,6 +989,7 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
           photo: photo ? finalId(photo.assetId) : undefined,
           players: Object.fromEntries(media.filter((m) => m.key !== 'photo').map((m) => [m.key, finalId(m.assetId)])),
           cutouts,
+          depths,
         },
       },
       get().assets,

@@ -1,5 +1,6 @@
 import { updateSelected } from '../actions';
-import type { Clip, GraphicSpec } from '../model/types';
+import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
+import { edit } from '../store';
 import { ColorField, gestureProps, Section, Toggle } from '../ui/controls';
 
 /** Labels for the text fields graphics use, in the order they're shown. */
@@ -56,12 +57,31 @@ export function GraphicPanel({ clip }: { clip: Clip }) {
           ))}
         </Section>
       )}
+      <Section title="Look">
+        <select
+          className="select"
+          aria-label="Graphics look"
+          value={g.look ?? 'broadcast'}
+          onChange={(e) => {
+            const look = e.target.value as GraphicLook;
+            // One package per reel: restyle every graphic together.
+            edit((p) => ({ ...p, clips: p.clips.map((c) => (c.graphic ? { ...c, graphic: { ...c.graphic, look } } : c)) }));
+          }}
+        >
+          <option value="broadcast">Broadcast</option>
+          <option value="championship">Championship</option>
+          <option value="neon">Neon</option>
+          <option value="classic">Classic</option>
+        </select>
+        <p className="hint subtle">Changes every graphic in the reel.</p>
+      </Section>
       <Section title="Team colours">
         <ColorField label="Primary" value={g.colors[0]} onChange={(v) => set({ colors: [v, g.colors[1]] })} />
         <ColorField label="Accent" value={g.colors[1]} onChange={(v) => set({ colors: [g.colors[0], v] })} />
       </Section>
       {g.type === 'playerCard' && g.media === 'image' && (
         <Section title="Photo">
+          {g.depth && <Toggle label="Living photo (3D camera move)" checked={!g.still} onChange={(v) => set({ still: !v })} />}
           <Toggle label="Cut-out style (photo has no background)" checked={!!g.cutout} onChange={(v) => set({ cutout: v })} />
         </Section>
       )}

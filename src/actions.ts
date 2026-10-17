@@ -9,6 +9,7 @@ import {
   duplicateClip,
   getMainTrack,
   placeClip,
+  projectDuration,
   removeClip,
   rippleDelete,
   splitClip,
@@ -512,4 +513,211 @@ export function setSpotlightHold(hold: number) {
 function engineSeek(t: number) {
   engine.pause();
   engine.seek(t);
+}
+
+// ---------- music, sound effects, voiceover ----------
+
+const soundCache = new Map<string, Promise<{ blob: Blob; beats?: number[]; bpm?: number }>>();
+
+function renderSound(kind: 'music' | 'sfx', id: string, preview = false) {
+  const key = `${kind}:${id}${preview ? ':preview' : ''}`;
+  let p = soundCache.get(key);
+  if (!p) {
+    p = (async () => {
+      const synth = await import('./audio/synth');
+      const { encodeWav } = await import('./audio/wav');
+      if (kind === 'music') {
+        const track = synth.MUSIC.find((m) => m.id === id)!;
+        const { buffer, beats } = await synth.renderMusic(track, preview ? 8 : Infinity);
+        return { blob: encodeWav(buffer), beats, bpm: track.bpm };
+      }
+      const sfx = synth.SFX.find((x) => x.id === id)!;
+      return { blob: encodeWav(await synth.renderSfx(sfx)) };
+    })();
+    p.catch(() => soundCache.delete(key));
+    soundCache.set(key, p);
+  }
+  return p;
+}
+
+let previewAudio: HTMLAudioElement | null = null;
+let previewKey: string | null = null;
+
+/** Plays a library sound; calling again with the same sound stops it. Returns whether it is now playing. */
+export async function togglePreviewSound(kind: 'music' | 'sfx', id: string): Promise<boolean> {
+  const key = `${kind}:${id}`;
+  if (previewAudio) {
+    previewAudio.pause();
+    URL.revokeObjectURL(previewAudio.src);
+    previewAudio = null;
+    if (previewKey === key) {
+      previewKey = null;
+      return false;
+    }
+  }
+  previewKey = key;
+  const { blob } = await renderSound(kind, id, kind === 'music');
+  if (previewKey !== key) return false;
+  const audio = new Audio(URL.createObjectURL(blob));
+  previewAudio = audio;
+  audio.onended = () => {
+    if (previewAudio === audio) {
+      previewAudio = null;
+      previewKey = null;
+    }
+  };
+  await audio.play().catch(() => {});
+  // Someone previewing a track will probably add it: render the full version meanwhile.
+  if (kind === 'music') void renderSound('music', id).catch(() => {});
+  return true;
+}
+
+export function stopPreviewSound() {
+  previewAudio?.pause();
+  previewAudio = null;
+  previewKey = null;
+}
+
+/** Adds a library music bed from the start of the project, trimmed and faded to fit the edit. */
+export async function addMusic(id: string): Promise<void> {
+  stopPreviewSound();
+  await runTask('Preparing music', async () => {
+    const { MUSIC } = await import('./audio/synth');
+    const track = MUSIC.find((m) => m.id === id)!;
+    const { blob, beats, bpm } = await renderSound('music', id);
+    const asset = await importBlob(blob, `${track.title} (${track.bpm} BPM).wav`);
+    if (!asset) return;
+    patchAsset(asset.id, { beats, bpm });
+    const clip = createMediaClip(asset);
+    const length = projectDuration(get().project);
+    if (length > 1 && length < clip.duration) {
+      clip.duration = length;
+      clip.audioFadeOut = Math.min(2, length / 4);
+    }
+    clip.volume = 0.8;
+    edit((p) => placeClip(p, { ...clip, start: 0 }));
+    select(clip.id);
+    toast(`Added "${track.title}"`);
+  });
+}
+
+export async function addSfx(id: string): Promise<void> {
+  stopPreviewSound();
+  const { SFX } = await import('./audio/synth');
+  const sfx = SFX.find((x) => x.id === id)!;
+  const { blob } = await renderSound('sfx', id);
+  const asset = await importBlob(blob, `${sfx.title}.wav`);
+  if (!asset) return;
+  const clip = { ...createMediaClip(asset), start: get().currentTime };
+  edit((p) => placeClip(p, clip));
+  toast(`Added "${sfx.title}" at the playhead`);
+}
+
+/** Beat times on the timeline for an audio-bearing clip whose asset has beats. */
+export function clipBeatsOnTimeline(clip: Clip): number[] {
+  const asset = clip.assetId ? get().assets[clip.assetId] : undefined;
+  if (!asset?.beats) return [];
+  const out: number[] = [];
+  const hold = clip.hold ?? 0;
+  for (const b of asset.beats) {
+    if (b < clip.inPoint) continue;
+    const t = clip.start + hold + (b - clip.inPoint) / clip.speed;
+    if (t > clipEnd(clip) + 1e-3) break;
+    out.push(t);
+  }
+  return out;
+}
+
+/** Finds beats in the selected clip's audio (if not already known) and drops markers on them. */
+export async function detectBeatsSelected(): Promise<number> {
+  const sel = selectedClip(get());
+  if (!sel || (sel.kind !== 'audio' && sel.kind !== 'video') || !sel.assetId) {
+    toast('Select a music or video clip');
+    return 0;
+  }
+  const asset = get().assets[sel.assetId];
+  if (!asset.beats) {
+    const res = await runTask('Finding beats', async () => {
+      const { analyzeBeats } = await import('./audio/beats');
+      return analyzeBeats(asset);
+    });
+    if (!res) return 0;
+    patchAsset(asset.id, { beats: res.beats, bpm: res.bpm });
+  }
+  const clip = selectedClip(get())!;
+  const times = clipBeatsOnTimeline(clip);
+  // Mark the downbeat of every bar to keep the ruler readable.
+  const bars = times.filter((_, i) => i % 4 === 0);
+  edit((p) => {
+    let next: Project = { ...p, markers: (p.markers ?? []).filter((m) => m.label !== 'beat') };
+    for (const t of bars) next = addMarker(next, t, 'beat', '#00c2d1');
+    return next;
+  });
+  toast(`${get().assets[asset.id].bpm ?? ''} BPM. Marked ${bars.length} bars`);
+  return bars.length;
+}
+
+/** Re-times the main track so cuts land on the music's beats. */
+export async function cutToBeat(beatsPerCut: number) {
+  const s = get();
+  let music = selectedClip(s);
+  if (!music || (music.kind !== 'audio' && music.kind !== 'video') || !music.assetId || !s.assets[music.assetId]?.beats) {
+    music = s.project.clips.find((c) => c.kind === 'audio' && c.assetId && s.assets[c.assetId]?.beats) ?? null;
+  }
+  if (!music) {
+    toast('Add a music track and detect its beats first');
+    return;
+  }
+  const beats = clipBeatsOnTimeline(music);
+  const { cutToBeats } = await import('./audio/beats');
+  edit((p) => cutToBeats(p, beats, beatsPerCut, get().assets));
+  toast(`Cuts synced to every ${beatsPerCut === 1 ? 'beat' : `${beatsPerCut} beats`}`);
+}
+
+// Voiceover recording
+let recorder: MediaRecorder | null = null;
+
+export async function startVoiceover(): Promise<boolean> {
+  if (recorder) return true;
+  let stream: MediaStream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    toast('Microphone access was blocked');
+    return false;
+  }
+  const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks: Blob[] = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const start = get().currentTime;
+  rec.onstop = async () => {
+    stream.getTracks().forEach((t) => t.stop());
+    engine.setMonitorMuted(false);
+    const type = rec.mimeType || 'audio/webm';
+    const blob = new Blob(chunks, { type });
+    useEditor.setState({ recording: null });
+    if (blob.size < 1000) return;
+    const n = get().project.clips.filter((c) => /^Voiceover/.test(c.name)).length + 1;
+    const asset = await importBlob(blob, `Voiceover ${n}.${type.includes('mp4') ? 'm4a' : 'webm'}`);
+    if (!asset) return;
+    const clip = { ...createMediaClip(asset), start, name: `Voiceover ${n}` };
+    // The recorder may report an unknown length for streamed WebM; use the real elapsed time.
+    if (!isFinite(clip.duration) || clip.duration <= 0.1) clip.duration = Math.max(0.5, get().currentTime - start);
+    edit((p) => placeClip(p, clip));
+    select(clip.id);
+    toast('Voiceover added');
+  };
+  recorder = rec;
+  engine.setMonitorMuted(true);
+  rec.start(250);
+  useEditor.setState({ recording: { start } });
+  if (projectDuration(get().project) > start + 0.1) engine.play();
+  return true;
+}
+
+export function stopVoiceover() {
+  engine.pause();
+  recorder?.stop();
+  recorder = null;
 }

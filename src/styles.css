@@ -2228,6 +2228,168 @@ input[type='range']::-moz-range-thumb {
   color: var(--text-2);
 }
 
+/* ---------- audio library ---------- */
+.audio-tab .chips {
+  flex-wrap: wrap;
+}
+
+.music-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.music-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.music-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.music-art.playing {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.music-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.music-meta strong {
+  font-weight: 600;
+}
+
+.music-meta small {
+  color: var(--text-3);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn.add {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 50%;
+}
+
+.icon-btn.add:hover:not(:disabled) {
+  background: var(--accent-2);
+  color: var(--accent-ink);
+}
+
+.sfx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+
+.sfx-item {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  background: var(--panel-2);
+  border: 1px solid transparent;
+}
+
+.sfx-item.playing {
+  border-color: var(--accent);
+}
+
+.sfx-play {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 9px 4px 9px 9px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sfx-play span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voiceover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.rec-btn {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 14px 0 8px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+}
+
+.rec-btn span {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #ff3b5c;
+  transition: all 0.2s;
+}
+
+.rec-btn.on span {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.rec-status {
+  margin: 0;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.rec-status b {
+  color: #ff3b5c;
+}
+
+.bpm-badge {
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: rgba(0, 194, 209, 0.15);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.beat-cut {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+
 /* ---------- captions ---------- */
 .caption-styles {
   display: grid;

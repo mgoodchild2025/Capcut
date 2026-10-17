@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { renameProject, updateSelected } from '../actions';
+import { cutToBeat, detectBeatsSelected, renameProject, updateSelected } from '../actions';
 import { neighbours, setClipSpeed } from '../model/ops';
 import {
   ANIMATIONS,
@@ -206,6 +206,7 @@ function AudioPanel({ clip }: { clip: Clip }) {
         <KeySlider clip={clip} prop="volume" label="Volume" min={0} max={2} step={0.01} format={pct} defaultValue={1} />
         <Toggle label="Mute clip" checked={clip.volume === 0} onChange={(m) => updateSelected({ volume: m ? 0 : 1 })} />
       </Section>
+      <BeatSection clip={clip} />
       <Section title="Fades">
         <Slider label="Fade in" value={clip.audioFadeIn} min={0} max={Math.min(10, clip.duration / 2)} step={0.1} format={secs} defaultValue={0} onChange={(audioFadeIn) => updateSelected({ audioFadeIn })} />
         <Slider label="Fade out" value={clip.audioFadeOut} min={0} max={Math.min(10, clip.duration / 2)} step={0.1} format={secs} defaultValue={0} onChange={(audioFadeOut) => updateSelected({ audioFadeOut })} />
@@ -395,5 +396,27 @@ function ProjectPanel() {
         </Section>
       </div>
     </aside>
+  );
+}
+
+function BeatSection({ clip }: { clip: Clip }) {
+  const asset = useEditor((s) => (clip.assetId ? s.assets[clip.assetId] : undefined));
+  const busy = useEditor((s) => !!s.task);
+  const [every, setEvery] = useState(2);
+  if (!asset || (clip.kind !== 'audio' && clip.kind !== 'video')) return null;
+  return (
+    <Section title="Beat sync" action={asset.bpm ? <span className="bpm-badge">{asset.bpm} BPM</span> : undefined}>
+      <button className="btn block" disabled={busy} onClick={() => void detectBeatsSelected()}>
+        <Icon name="beat" /> {asset.beats ? 'Mark beats on the timeline' : 'Find beats'}
+      </button>
+      <div className="beat-cut">
+        <span className="muted small">Cut main track every</span>
+        <Segmented value={every} onChange={setEvery} options={[1, 2, 4, 8].map((n) => ({ value: n, label: String(n) }))} />
+        <span className="muted small">beats</span>
+      </div>
+      <button className="btn block" disabled={busy || !asset.beats} onClick={() => void cutToBeat(every)}>
+        <Icon name="wand" /> Sync cuts to the beat
+      </button>
+    </Section>
   );
 }

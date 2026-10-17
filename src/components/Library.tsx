@@ -13,6 +13,7 @@ import {
 import { CAPTION_PRESETS, hasCaptions } from '../captions/captions';
 import { cancelCaptions, clearCaptions, generateCaptions, restyleCaptions, useCaptions } from '../captions/state';
 import { LANGUAGES } from '../captions/languages';
+import { AudioTab } from './AudioTab';
 import { DEFAULT_TEXT, FILTERS, STICKERS, TEXT_TEMPLATES, TRANSITIONS } from '../model/presets';
 import type { Asset } from '../model/types';
 import { selectedClip, useEditor, type LeftTab } from '../store';
@@ -61,7 +62,7 @@ export function LibraryTabBody({ tab }: { tab: LeftTab }) {
     case 'media':
       return <MediaTab kinds={['video', 'image']} />;
     case 'audio':
-      return <MediaTab kinds={['audio']} />;
+      return <AudioTab mine={<MediaTab kinds={['audio']} />} />;
     case 'text':
       return <TextTab />;
     case 'captions':

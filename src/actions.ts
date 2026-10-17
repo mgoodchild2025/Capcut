@@ -330,8 +330,14 @@ export function captureThumbnail(): string | undefined {
   return c.toDataURL('image/jpeg', 0.7);
 }
 
-export async function saveNow() {
-  const { project, assets, view } = get();
+export async function saveNow(force = false) {
+  const { project, assets, view, playing } = get();
+  // Saving mid-playback costs frames on phones; wait for a pause (closing the page still saves).
+  if (playing && !force) {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void saveNow(), 1200);
+    return;
+  }
   if (view !== 'editor') return;
   if (project === lastSaved && assets === lastSavedAssets) return;
   // An untouched new project isn't worth a draft.
@@ -352,7 +358,9 @@ export function startAutosave() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void saveNow(), 1200);
   });
-  window.addEventListener('beforeunload', () => void saveNow());
+  window.addEventListener('beforeunload', () => void saveNow(true));
+  // iOS seldom sends beforeunload; switching apps hides the page first.
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && void saveNow(true));
 }
 
 export function renameProject(name: string) {

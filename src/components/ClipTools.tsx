@@ -23,7 +23,7 @@ import { engine } from '../engine/engine';
 import { trackKindFor } from '../model/ops';
 import { CURVE_PRESETS, hasKeyframeAt, keyframeTimes, valueAt } from '../model/timing';
 import type { Clip, Crop, KeyProp, SpeedPoint } from '../model/types';
-import { useEditor } from '../store';
+import { coarseTime, useEditor } from '../store';
 import { ColorField, gestureProps, Section, Slider, Toggle } from '../ui/controls';
 import { Icon } from '../ui/Icon';
 import { formatDuration } from '../utils';
@@ -142,7 +142,7 @@ export function KeySlider({
   format: (v: number) => string;
   defaultValue: number;
 }) {
-  useEditor((s) => s.currentTime); // follow the playhead so animated values stay current
+  useEditor(coarseTime); // follow the playhead so animated values stay current
   const local = localPlayhead(clip);
   const animated = !!clip.keyframes?.[prop]?.length;
   const here = hasKeyframeAt(clip, prop, local);
@@ -166,7 +166,7 @@ export function KeySlider({
 
 /** Jump between the clip's keyframes. */
 export function KeyframeNav({ clip }: { clip: Clip }) {
-  useEditor((s) => s.currentTime);
+  useEditor(coarseTime);
   const times = keyframeTimes(clip);
   if (!times.length) return null;
   const local = localPlayhead(clip);

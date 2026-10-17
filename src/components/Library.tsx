@@ -17,7 +17,7 @@ import { AudioTab } from './AudioTab';
 import { VolleyballTab } from './VolleyballTab';
 import { DEFAULT_TEXT, FILTERS, STICKERS, TEXT_TEMPLATES, TRANSITIONS } from '../model/presets';
 import type { Asset } from '../model/types';
-import { selectedClip, useEditor, type LeftTab } from '../store';
+import { coarseTime, selectedClip, useEditor, type LeftTab } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatBytes, formatDuration } from '../utils';
 
@@ -238,7 +238,7 @@ function StickerTab() {
 
 function FilterTab() {
   const sel = useEditor(selectedClip);
-  useEditor((s) => s.currentTime);
+  useEditor(coarseTime);
   const target = sel && (sel.kind === 'video' || sel.kind === 'image') ? sel : targetVisualClip();
   const current = target?.filter ?? null;
   const thumb = useEditor((s) => (target?.assetId ? s.assets[target.assetId]?.thumbnail : undefined));

@@ -60,6 +60,8 @@ export function Timeline() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ left: 0, width: 800 });
+  // The same, readable without asking the page for layout (which is slow mid-frame).
+  const viewRef = useRef(view);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [snapLine, setSnapLine] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<{ x: number; top: number; height: number } | null>(null);
@@ -93,7 +95,10 @@ export function Timeline() {
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const update = () => setView({ left: el.scrollLeft, width: el.clientWidth });
+    const update = () => {
+      viewRef.current = { left: el.scrollLeft, width: el.clientWidth };
+      setView(viewRef.current);
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
@@ -113,7 +118,8 @@ export function Timeline() {
         if (!el) return;
         const head = headRef.current;
         const x = head + s.currentTime * s.pxPerSec;
-        if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + head) {
+        const { left, width } = viewRef.current;
+        if (x > left + width - 40 || x < left + head) {
           el.scrollLeft = x - head - 40;
         }
       }),
@@ -550,9 +556,17 @@ function Markers({ pps }: { pps: number }) {
 }
 
 function Playhead({ pps, headW, onPointerDown }: { pps: number; headW: number; onPointerDown: (e: React.PointerEvent) => void }) {
-  const t = useEditor((s) => s.currentTime);
+  // Moved directly rather than through React, which would re-render it on every frame.
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const place = (t: number) => {
+      if (ref.current) ref.current.style.left = `${headW + t * pps}px`;
+    };
+    place(useEditor.getState().currentTime);
+    return useEditor.subscribe((s, prev) => s.currentTime !== prev.currentTime && place(s.currentTime));
+  }, [pps, headW]);
   return (
-    <div className="playhead" style={{ left: headW + t * pps }}>
+    <div className="playhead" ref={ref}>
       <span className="playhead-knob" onPointerDown={onPointerDown} />
     </div>
   );

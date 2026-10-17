@@ -49,7 +49,12 @@ class Engine {
   /** Holds the directly displayed video under the preview canvas. */
   private directHost: HTMLDivElement | null = null;
   private directShown: MediaEntry | null = null;
+  /** The preview's on-screen size, kept by an observer so frames never have to ask for layout. */
+  private previewSize = { w: 0, h: 0 };
+  private previewObserver: ResizeObserver | null = null;
   private stallMs = 0;
+  /** Clips that hold a media element this frame; the rest are spares to reuse. */
+  private claimed = new Set<string>();
   private lastLoop = 0;
   /**
    * Show the bottom video as a page element rather than copying every frame onto the canvas.
@@ -85,6 +90,18 @@ class Engine {
 
   setPreviewCanvas(canvas: HTMLCanvasElement | null) {
     this.preview = canvas;
+    this.previewObserver?.disconnect();
+    this.previewObserver = null;
+    if (canvas) {
+      this.previewSize = { w: canvas.clientWidth, h: canvas.clientHeight };
+      if (typeof ResizeObserver !== 'undefined') {
+        this.previewObserver = new ResizeObserver(() => {
+          this.previewSize = { w: canvas.clientWidth, h: canvas.clientHeight };
+          this.invalidate();
+        });
+        this.previewObserver.observe(canvas);
+      }
+    }
     this.directHost?.remove();
     this.directHost = null;
     this.directShown = null;
@@ -186,10 +203,25 @@ class Engine {
 
   // ---------- media elements ----------
 
-  private mediaFor(clip: Clip, asset: Asset): MediaEntry {
+  private mediaFor(clip: Clip, asset: Asset, near = clip.inPoint): MediaEntry {
     let entry = this.media.get(clip.id);
     if (entry && entry.assetId === asset.id) return entry;
     if (entry) this.dispose(clip.id);
+    // Reuse an element of the same file that no clip needs right now, preferring the one already
+    // nearest the wanted spot. After a plain cut that's the element that was just playing, so the
+    // next piece carries on without a seek or a restart (phones stutter on both), and an edited
+    // timeline doesn't pile up one decoder per piece.
+    let spare: string | null = null;
+    for (const [id, e] of this.media) {
+      if (e.assetId !== asset.id || this.claimed.has(id)) continue;
+      if (spare === null || Math.abs(e.el.currentTime - near) < Math.abs(this.media.get(spare)!.el.currentTime - near)) spare = id;
+    }
+    if (spare !== null) {
+      entry = this.media.get(spare)!;
+      this.media.delete(spare);
+      this.media.set(clip.id, entry);
+      return entry;
+    }
     const el = document.createElement(asset.kind === 'audio' ? 'audio' : 'video') as HTMLVideoElement;
     el.preload = 'auto';
     el.muted = true;
@@ -223,7 +255,7 @@ class Engine {
   private holdClock(t: number, dtMs: number) {
     this.stallMs += dtMs;
     if (this.stallMs > MAX_STALL_MS) return;
-    this.clockStartTime = t;
+    this.clockStartTime = Math.max(0, t);
     this.clockStartWall = performance.now();
   }
 
@@ -246,8 +278,8 @@ class Engine {
     const host = this.directHost;
     if (!canvas || !host) return;
     const { settings } = useEditor.getState().project;
-    const kx = canvas.clientWidth / settings.width;
-    const ky = canvas.clientHeight / settings.height;
+    const kx = this.previewSize.w / settings.width;
+    const ky = this.previewSize.h / settings.height;
     let wrap = entry.wrap;
     if (!wrap) {
       wrap = document.createElement('div');
@@ -364,6 +396,26 @@ class Engine {
     const live = new Set<string>();
     const layers = activeLayers(project, t);
     let led = false;
+    const isMedia = (clip: Clip) => {
+      const asset = clip.assetId ? assets[clip.assetId] : undefined;
+      return !!asset && (clip.kind === 'video' || clip.kind === 'audio' || (clip.kind === 'graphic' && asset.kind === 'video'));
+    };
+    // Upcoming clips that continue what's playing (the next piece after a cut) inherit its element
+    // instead of pre-rolling their own.
+    const upcoming = upcomingClips(project, t).filter((u) => {
+      if (!isMedia(u)) return false;
+      const continues = layers.some(
+        (l) => l.clip.assetId === u.assetId && Math.abs(l.sourceTime + (u.start - t) * rateAt(l.clip, l.local) - u.inPoint) < 0.3,
+      );
+      // An element it was given earlier (say while paused here) becomes a spare.
+      const own = this.media.get(u.id);
+      if (continues && own) {
+        this.media.delete(u.id);
+        this.media.set(`~${u.id}`, own);
+      }
+      return !continues;
+    });
+    this.claimed = new Set([...layers.filter((l) => isMedia(l.clip)).map((l) => l.clip.id), ...upcoming.map((c) => c.id)]);
 
     for (const layer of layers) {
       const { clip, track } = layer;
@@ -371,7 +423,7 @@ class Engine {
       // Graphics showing a player's clip play it like a (silent) video clip.
       if (clip.kind !== 'video' && clip.kind !== 'audio' && !(clip.kind === 'graphic' && asset?.kind === 'video')) continue;
       if (!asset) continue;
-      const entry = this.mediaFor(clip, asset);
+      const entry = this.mediaFor(clip, asset, layer.sourceTime);
       live.add(clip.id);
       const el = entry.el;
       const end = Math.max(0, asset.duration - 0.01);
@@ -388,9 +440,16 @@ class Engine {
         const leads = !led && clip.kind === 'video' && layer.transition?.role !== 'out';
         if (leads) led = true;
         if (el.paused) {
-          if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target;
+          const off = target - el.currentTime;
+          if (leads && Math.abs(off) < 0.5 * rate) {
+            // Only just behind (a slow first frame after Play): wind the clock back to the video
+            // rather than seeking it, since a seek stalls the start on phones.
+            this.holdClock(t - off / rate, dtMs);
+          } else {
+            if (Math.abs(off) > 0.05) el.currentTime = target;
+            if (leads) this.holdClock(t, dtMs);
+          }
           void el.play().catch(() => {});
-          if (leads) this.holdClock(t, dtMs);
         } else if (leads) {
           const drift = el.currentTime - target;
           if (Math.abs(drift) > 1.5 * Math.max(1, rate)) {
@@ -417,10 +476,8 @@ class Engine {
     }
 
     // Pre-roll clips that are about to start so the cut is seamless.
-    for (const clip of upcomingClips(project, t)) {
-      const asset = clip.assetId ? assets[clip.assetId] : undefined;
-      if (clip.kind !== 'video' && clip.kind !== 'audio' && !(clip.kind === 'graphic' && asset?.kind === 'video')) continue;
-      if (!asset) continue;
+    for (const clip of upcoming) {
+      const asset = assets[clip.assetId!];
       const entry = this.mediaFor(clip, asset);
       live.add(clip.id);
       if (!entry.el.paused) entry.el.pause();
@@ -428,14 +485,17 @@ class Engine {
       this.setGain(entry, 0);
     }
 
-    const existing = new Set(project.clips.map((c) => c.id));
+    // Keep one spare element per file (the likeliest to be reused) and release the rest.
+    const spares = new Set<string>();
     for (const [id, entry] of this.media) {
-      if (!existing.has(id)) {
+      if (live.has(id)) continue;
+      if (!assets[entry.assetId] || spares.has(entry.assetId)) {
         this.dispose(id);
-      } else if (!live.has(id)) {
-        if (!entry.el.paused) entry.el.pause();
-        this.setGain(entry, 0);
+        continue;
       }
+      spares.add(entry.assetId);
+      if (!entry.el.paused) entry.el.pause();
+      this.setGain(entry, 0);
     }
   }
 
@@ -446,7 +506,8 @@ class Engine {
     const state = useEditor.getState();
     let t = state.currentTime;
     if (state.playing) {
-      t = this.clockStartTime + (now - this.clockStartWall) / 1000;
+      // A frame's timestamp can predate a clock reset made since (Play, a seek), so never run backwards.
+      t = this.clockStartTime + Math.max(0, now - this.clockStartWall) / 1000;
       const dur = projectDuration(state.project);
       if (t >= dur) {
         t = dur;

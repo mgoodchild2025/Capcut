@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { addMusic, addSfx, generateSpeech, startVoiceover, stopPreviewSound, stopVoiceover, togglePreviewSound } from '../actions';
 import { TTS_VOICES } from '../ai/tts';
-import { LIBRARY_MUSIC, LIBRARY_SFX } from '../audio/library';
+import { LIBRARY_MUSIC, LIBRARY_SFX, MUSIC_GENRES, type MusicGenre } from '../audio/library';
 import { MUSIC, SFX, trackLength } from '../audio/synth';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
@@ -9,10 +9,24 @@ import { formatDuration, formatTimecode } from '../utils';
 
 type Section = 'music' | 'sfx' | 'mine' | 'record';
 
+/** Filters the recorded music by style. */
+export function GenreChips({ value, onChange }: { value: MusicGenre | null; onChange: (g: MusicGenre | null) => void }) {
+  return (
+    <div className="genre-chips" role="radiogroup" aria-label="Music style">
+      {[null, ...MUSIC_GENRES].map((g) => (
+        <button key={g ?? 'all'} role="radio" aria-checked={value === g} className={`chip-btn ${value === g ? 'on' : ''}`} onClick={() => onChange(g)}>
+          {g ?? 'All'} {g && <small>{LIBRARY_MUSIC.filter((m) => m.genre === g).length}</small>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function AudioTab({ mine }: { mine: React.ReactNode }) {
   const [section, setSection] = useState<Section>('music');
   const [playing, setPlaying] = useState<string | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
+  const [genre, setGenre] = useState<MusicGenre | null>(null);
   useEffect(() => stopPreviewSound, []);
 
   const preview = async (kind: 'music' | 'sfx', id: string) => {
@@ -43,10 +57,11 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
       {section === 'music' && (
         <>
           <p className="lib-note">Studio recordings, free to use anywhere (CC0). Beats are known, so cuts can snap to them.</p>
+          <GenreChips value={genre} onChange={setGenre} />
           <ul className="music-list">
             {[
-              ...LIBRARY_MUSIC.map((m) => ({ ...m, mood: `${m.mood} · ${m.artist}` })),
-              ...MUSIC.map((m) => ({ ...m, mood: `${m.mood} · Generated`, seconds: trackLength(m).seconds })),
+              ...LIBRARY_MUSIC.filter((m) => !genre || m.genre === genre).map((m) => ({ ...m, mood: `${m.mood} · ${m.artist}` })),
+              ...(genre ? [] : MUSIC.map((m) => ({ ...m, mood: `${m.mood} · Generated`, seconds: trackLength(m).seconds }))),
             ].map((m) => {
               const key = `music:${m.id}`;
               const { seconds } = m;
@@ -74,7 +89,7 @@ export function AudioTab({ mine }: { mine: React.ReactNode }) {
             })}
           </ul>
           <p className="lib-note subtle">
-            Music by Liq_mmry, cynicmusic, Alexander Ehlers, Emma_MA, Zane Little Music and Joth; sounds by Kenney and OpenGameArt artists. All released to the public domain (CC0).
+            Music by Liq_mmry, cynicmusic, Alexander Ehlers, Emma_MA, Zane Little Music, Joth, section31, MintoDog, Fupi, isaiah658, tebruno99 and iamoneabe; sounds by Kenney and OpenGameArt artists. All released to the public domain (CC0).
           </p>
         </>
       )}

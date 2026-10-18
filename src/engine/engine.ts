@@ -1,5 +1,5 @@
 import { activeLayers, projectDuration, upcomingClips } from '../model/ops';
-import { clipGain, rateAt } from '../model/timing';
+import { clipGain, rateAt, sourceTimeAt } from '../model/timing';
 import type { Asset, Clip } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
@@ -15,11 +15,33 @@ interface MediaEntry {
   wrap?: HTMLDivElement;
 }
 
-const blankStats = () => ({ frames: 0, ms: 0, slow: 0, worst: 0, seeks: 0, seekWhy: { start: 0, lead: 0, audio: 0, other: 0 }, restarts: 0, stallMs: 0 });
+const blankStats = () => ({ frames: 0, ms: 0, slow: 0, worst: 0, seeks: 0, seekWhy: { start: 0, lead: 0, audio: 0, other: 0 }, restarts: 0, stallMs: 0, freezes: 0, frozenMs: 0 });
+
+/**
+ * A speed ramp as steps: the average rate over the half second the clip is in, so the video
+ * lands exactly where it should at the end of each step but changes speed at most twice a
+ * second. Phones stutter at every rate change.
+ */
+function stepRate(clip: Clip, local: number): number {
+  if (!clip.curve) return rateAt(clip, local);
+  const hold = clip.hold ?? 0;
+  const l = local - hold;
+  if (l < 0) return rateAt(clip, local);
+  const step = 0.5;
+  const a = hold + Math.floor(l / step) * step;
+  const b = Math.min(clip.duration, a + step);
+  if (b - a < 0.05) return rateAt(clip, local);
+  const at = (x: number) => sourceTimeAt({ ...clip, start: 0 }, x);
+  return (at(b) - at(a)) / (b - a);
+}
 
 /** Sets a media element's rate, skipping changes under 3% (each change costs phones a stutter). */
+let rateChanges = 0;
 function setRate(el: HTMLMediaElement, rate: number) {
-  if (Math.abs(el.playbackRate - rate) > 0.03 * rate) el.playbackRate = rate;
+  if (Math.abs(el.playbackRate - rate) > 0.03 * rate) {
+    el.playbackRate = rate;
+    rateChanges++;
+  }
 }
 
 /** How long the clock may wait for the leading video to start or catch up before running on regardless. */
@@ -263,6 +285,26 @@ class Engine {
     return entry;
   }
 
+  private lastLead: { el: HTMLMediaElement; t: number; still: number } | null = null;
+  /** Counts the leading video standing still while it should play (a visible hang). */
+  private watchFreeze(el: HTMLMediaElement, dtMs: number) {
+    const prev = this.lastLead;
+    if (!prev || prev.el !== el) {
+      this.lastLead = { el, t: el.currentTime, still: 0 };
+      return;
+    }
+    if (el.currentTime !== prev.t) {
+      if (prev.still >= 150) {
+        this.stats.freezes++;
+        this.stats.frozenMs += prev.still;
+      }
+      prev.t = el.currentTime;
+      prev.still = 0;
+    } else {
+      prev.still += dtMs;
+    }
+  }
+
   /** Moves a playing element to `t`, counting it (and why): seeks are what make phones stutter. */
   private seekEl(el: HTMLMediaElement, t: number, why: 'start' | 'lead' | 'audio' | 'other') {
     this.stats.seeks++;
@@ -277,6 +319,7 @@ class Engine {
     const q = lead instanceof HTMLVideoElement && lead.getVideoPlaybackQuality ? lead.getVideoPlaybackQuality() : null;
     return {
       ...this.stats,
+      rateChanges,
       fps: this.stats.ms > 0 ? (this.stats.frames * 1000) / this.stats.ms : 0,
       players: this.media.size,
       direct: this.directShown.size > 0,
@@ -287,6 +330,7 @@ class Engine {
 
   resetStats() {
     this.stats = blankStats();
+    rateChanges = 0;
   }
 
   /** Keeps the timeline where it is while the leading video starts or buffers, up to a limit. */
@@ -341,26 +385,32 @@ class Engine {
     const c = p.clip.crop;
     const left = c?.left ?? 0;
     const top = c?.top ?? 0;
-    const w = p.w * kx;
-    const h = p.h * ky;
+    // The box keeps its unscaled size, and position, rotation and scale are one transform: pans,
+    // zooms and slides then move a composited layer instead of re-laying out the video every
+    // frame, which iPhones show as judder.
+    const k = Math.max(1e-6, p.scale);
+    const w = (p.w / k) * kx;
+    const h = (p.h / k) * ky;
     const innerW = w / Math.max(0.01, 1 - left - (c?.right ?? 0));
     const innerH = h / Math.max(0.01, 1 - top - (c?.bottom ?? 0));
     const flip = p.clip.flipH || p.clip.flipV ? ` scale(${p.clip.flipH ? -1 : 1},${p.clip.flipV ? -1 : 1})` : '';
+    const x = p.cx * kx - w / 2;
+    const y = p.cy * ky - h / 2;
     setStyle(wrap, {
       display: 'block',
-      left: `${p.cx * kx - w / 2}px`,
-      top: `${p.cy * ky - h / 2}px`,
-      width: `${w}px`,
-      height: `${h}px`,
-      transform: p.rotation ? `rotate(${p.rotation}deg)` : '',
+      left: '0px',
+      top: '0px',
+      width: `${w.toFixed(1)}px`,
+      height: `${h.toFixed(1)}px`,
+      transform: `translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,0)${p.rotation ? ` rotate(${p.rotation}deg)` : ''}${k !== 1 ? ` scale(${k.toFixed(4)})` : ''}`,
       opacity: p.alpha < 1 ? String(p.alpha) : '',
       zIndex: String(order),
     });
     setStyle(entry.el as HTMLVideoElement, {
-      left: `${-left * innerW}px`,
-      top: `${-top * innerH}px`,
-      width: `${innerW}px`,
-      height: `${innerH}px`,
+      left: `${(-left * innerW).toFixed(1)}px`,
+      top: `${(-top * innerH).toFixed(1)}px`,
+      width: `${innerW.toFixed(1)}px`,
+      height: `${innerH.toFixed(1)}px`,
       // Flip around the visible frame's centre, as the canvas does.
       transformOrigin: `${left * innerW + w / 2}px ${top * innerH + h / 2}px`,
       transform: flip,
@@ -496,7 +546,7 @@ class Engine {
         // further behind, which is what made playback stutter on phones.
         const leads = !led && clip.kind === 'video' && layer.transition?.role !== 'out';
         if (leads) led = true;
-        if (leads || el.paused) setRate(el, rate);
+        if (leads || el.paused) setRate(el, this.directVideo ? clamp(stepRate(clip, layer.local), 0.0625, 16) : rate);
         if (el.paused) {
           const off = target - el.currentTime;
           if (leads && Math.abs(off) < 0.5 * rate) {
@@ -520,6 +570,7 @@ class Engine {
           } else if (el.seeking) {
             this.holdClock(t, dtMs);
           } else {
+            this.watchFreeze(el, dtMs);
             this.stallMs = 0;
             // Ease the clock toward the video so the timeline never jumps.
             if (Math.abs(drift) > 0.03) this.clockStartTime += (drift / rate) * 0.2;

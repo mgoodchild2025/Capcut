@@ -462,7 +462,8 @@ function PlaybackStats() {
       `Video: ${media.join('; ') || 'none'}`,
       `Frames: ${s.frames} at ${s.fps.toFixed(1)} fps, ${s.slow} slow (>50ms), worst ${Math.round(s.worst)}ms`,
       `Seeks ${s.seeks} (start ${s.seekWhy.start}, video ${s.seekWhy.lead}, audio ${s.seekWhy.audio}, other ${s.seekWhy.other}), starts ${s.restarts}, waiting ${(s.stallMs / 1000).toFixed(1)}s`,
-      `Video frames: ${s.dropped ?? '?'} dropped of ${s.decoded ?? '?'}, players ${s.players}, direct ${s.direct ? 'on' : 'off'}`,
+      `Video froze ${s.freezes} times (${(s.frozenMs / 1000).toFixed(1)}s), speed changes ${s.rateChanges}, players ${s.players}, direct ${s.direct ? 'on' : 'off'}`,
+      `Browser frame counts: ${s.dropped ?? '?'} dropped of ${s.decoded ?? '?'}`,
     ];
     return lines.join('\n');
   };
@@ -498,9 +499,9 @@ function PlaybackStats() {
         </b>
         <span>Waiting</span>
         <b className={bad(s.stallMs, 1500)}>{(s.stallMs / 1000).toFixed(1)}s</b>
-        <span>Dropped</span>
-        <b className={s.dropped && s.decoded && s.dropped / s.decoded > 0.05 ? 'bad' : ''}>
-          {s.dropped ?? '-'} <small>of {s.decoded ?? '-'}</small>
+        <span>Video froze</span>
+        <b className={bad(s.freezes, 0)}>
+          {s.freezes} <small>{(s.frozenMs / 1000).toFixed(1)}s</small>
         </b>
         <span>Players</span>
         <b className={bad(s.players, 3)}>

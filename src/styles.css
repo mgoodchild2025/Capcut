@@ -1010,6 +1010,9 @@ button:disabled {
 .direct-clip {
   position: absolute;
   overflow: hidden;
+  /* Moved by transform only: its own compositor layer. */
+  will-change: transform, opacity;
+  transform-origin: 50% 50%;
 }
 
 .direct-clip video {

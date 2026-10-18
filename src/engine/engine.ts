@@ -170,6 +170,7 @@ class Engine {
     this.stallMs = 0;
     this.clockStartTime = t;
     this.clockStartWall = performance.now();
+    this.playPressedAt = performance.now();
     useEditor.setState({ playing: true, currentTime: t });
   }
 
@@ -285,7 +286,25 @@ class Engine {
     return entry;
   }
 
+  /** Elements currently being nudged back into step (so they keep going until well inside). */
+  private nudging = new WeakSet<HTMLMediaElement>();
+  /**
+   * The speed factor that brings an element back into step: 1 while within `start` seconds, and
+   * once nudging, until within `stop`; at most `max` either way, in steps of `quantum`.
+   */
+  private steadyRate(el: HTMLMediaElement, drift: number, start: number, stop: number, max: number, quantum: number): number {
+    const off = Math.abs(drift);
+    if (this.nudging.has(el) ? off < stop : off < start) {
+      this.nudging.delete(el);
+      return 1;
+    }
+    this.nudging.add(el);
+    const n = Math.round(clamp(-drift * 0.8, -max, max) / quantum) * quantum;
+    return 1 + (n === 0 ? -Math.sign(drift) * quantum : n);
+  }
+
   private lastLead: { el: HTMLMediaElement; t: number; still: number } | null = null;
+  private playPressedAt = 0;
   /** Counts the leading video standing still while it should play (a visible hang). */
   private watchFreeze(el: HTMLMediaElement, dtMs: number) {
     const prev = this.lastLead;
@@ -335,6 +354,10 @@ class Engine {
 
   /** Keeps the timeline where it is while the leading video starts or buffers, up to a limit. */
   private holdClock(t: number, dtMs: number) {
+    // Phones keep real time once playback is under way: holding the clock at a cut while the next
+    // clip starts would leave the music ahead and need correcting (audible). The late clip catches
+    // up instead. Only the start of playback waits for the picture.
+    if (this.directVideo && performance.now() - this.playPressedAt > 1500) return;
     this.stallMs += dtMs;
     this.stats.stallMs += dtMs;
     if (this.stallMs > MAX_STALL_MS) return;
@@ -546,7 +569,9 @@ class Engine {
         // further behind, which is what made playback stutter on phones.
         const leads = !led && clip.kind === 'video' && layer.transition?.role !== 'out';
         if (leads) led = true;
-        if (leads || el.paused) setRate(el, this.directVideo ? clamp(stepRate(clip, layer.local), 0.0625, 16) : rate);
+        // On phones a playing lead's rate is set below, with its correction folded in.
+        if (el.paused) setRate(el, this.directVideo && leads ? clamp(stepRate(clip, layer.local), 0.0625, 16) : rate);
+        else if (leads && !this.directVideo) setRate(el, rate);
         if (el.paused) {
           const off = target - el.currentTime;
           if (leads && Math.abs(off) < 0.5 * rate) {
@@ -572,8 +597,19 @@ class Engine {
           } else {
             this.watchFreeze(el, dtMs);
             this.stallMs = 0;
-            // Ease the clock toward the video so the timeline never jumps.
-            if (Math.abs(drift) > 0.03) this.clockStartTime += (drift / rate) * 0.2;
+            if (this.directVideo) {
+              // Phones: real time is the master and the picture does the adjusting, a few percent
+              // faster or slower (invisible), so the music never has to (audible). Within a speed
+              // ramp's step the video strays a little by design, hence the dead band.
+              const want = this.steadyRate(el, drift, 0.15, 0.04, 0.15, 0.05) * stepRate(clip, layer.local);
+              if (Math.abs(el.playbackRate - want) > 0.001 * want) {
+                el.playbackRate = clamp(want, 0.0625, 16);
+                rateChanges++;
+              }
+            } else if (Math.abs(drift) > 0.03) {
+              // Desktops: ease the clock toward the video so the timeline never jumps.
+              this.clockStartTime += (drift / rate) * 0.2;
+            }
           }
         } else {
           // Followers (music, sound effects, an outgoing transition clip) are eased back into step
@@ -584,11 +620,12 @@ class Engine {
             this.seekEl(el, target, clip.kind === 'audio' ? 'audio' : 'other');
             setRate(el, rate);
           } else {
-            // In 2% steps, so the rate changes only now and then rather than every frame.
-            const nudge = Math.round(clamp(-drift * 0.8, -0.08, 0.08) / 0.02) * 0.02;
+            // Only when clearly out of step (and until well back in), in 2% steps: every change of
+            // rate is audible on music, so most of the time it plays untouched.
+            const factor = this.steadyRate(el, drift, 0.06, 0.02, 0.08, 0.02);
             // Steady-speed sound keeps its pitch while nudged.
             if (clip.kind === 'audio' && clip.speed === 1 && !clip.curve) el.preservesPitch = true;
-            const want = rate * (1 + nudge);
+            const want = rate * factor;
             if (Math.abs(el.playbackRate - want) > 0.001 * rate) el.playbackRate = want;
           }
         }

@@ -30,7 +30,7 @@ import {
 } from './model/ops';
 import { CURVE_PRESETS, curveAverage, removeKeyframe, setKeyframe, valueAt, hasKeyframeAt } from './model/timing';
 import type { Asset, Clip, KeyProp, Project, Spotlight, TextStyle, TransitionKind } from './model/types';
-import { addAsset, commit, edit, openProject, patchAsset, select, selectedClip, toast, useEditor } from './store';
+import { addAsset, commit, edit, openProject, patchAsset, select, selectedClip, toast, untilPaused, useEditor } from './store';
 
 const get = useEditor.getState;
 
@@ -80,18 +80,25 @@ async function convertWithProgress(file: Blob, name: string): Promise<Blob> {
   }
 }
 
-async function enrich(asset: Asset, blob: Blob) {
-  if (asset.kind === 'video') {
-    try {
-      patchAsset(asset.id, { filmstrip: await buildFilmstrip(asset) });
-    } catch (e) {
-      console.warn('Filmstrip failed', e);
+/** Timeline thumbnails and waveforms, one file at a time, paused while playback runs. */
+let enrichQueue: Promise<void> = Promise.resolve();
+function enrich(asset: Asset, blob: Blob): Promise<void> {
+  enrichQueue = enrichQueue.then(async () => {
+    if (asset.kind === 'video') {
+      try {
+        await untilPaused();
+        patchAsset(asset.id, { filmstrip: await buildFilmstrip(asset, untilPaused) });
+      } catch (e) {
+        console.warn('Filmstrip failed', e);
+      }
     }
-  }
-  if (asset.kind !== 'image') {
-    const waveform = await buildWaveform(blob);
-    patchAsset(asset.id, { waveform: waveform ?? [], hasAudio: !!waveform && waveform.length > 0 });
-  }
+    if (asset.kind !== 'image') {
+      await untilPaused();
+      const waveform = await buildWaveform(blob);
+      patchAsset(asset.id, { waveform: waveform ?? [], hasAudio: !!waveform && waveform.length > 0 });
+    }
+  });
+  return enrichQueue;
 }
 
 export function removeAsset(id: string) {
@@ -256,7 +263,7 @@ export async function openDraft(id: string) {
   // Older drafts may be missing extras; rebuild lazily.
   for (const a of Object.values(draft.assets)) {
     if (a.kind === 'video' && !a.filmstrip?.length) {
-      void buildFilmstrip(a).then((f) => patchAsset(a.id, { filmstrip: f }));
+      void buildFilmstrip(a, untilPaused).then((f) => patchAsset(a.id, { filmstrip: f }));
     }
   }
 }

@@ -1002,6 +1002,9 @@ button:disabled {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  /* Keeps the stacked videos' z-order inside, under the canvas. */
+  isolation: isolate;
+  z-index: 0;
 }
 
 .direct-clip {

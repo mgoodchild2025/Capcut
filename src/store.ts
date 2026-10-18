@@ -37,6 +37,22 @@ export interface EditorState {
   showStats: boolean;
 }
 
+/**
+ * Resolves once playback is paused (at once if it already is). Background work such as
+ * thumbnails and waveforms waits on this, so it never competes with playback for the CPU or,
+ * on phones, the hardware video decoder.
+ */
+export function untilPaused(): Promise<void> {
+  if (!useEditor.getState().playing) return Promise.resolve();
+  return new Promise((resolve) => {
+    const unsub = useEditor.subscribe((s) => {
+      if (s.playing) return;
+      unsub();
+      resolve();
+    });
+  });
+}
+
 const STATS_KEY = 'clipforge.stats';
 function statsOn(): boolean {
   try {

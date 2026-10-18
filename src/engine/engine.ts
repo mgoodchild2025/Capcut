@@ -50,7 +50,9 @@ class Engine {
   private onEnded: (() => void) | null = null;
   /** Holds the directly displayed video under the preview canvas. */
   private directHost: HTMLDivElement | null = null;
-  private directShown: MediaEntry | null = null;
+  /** Videos currently shown directly (two during a transition). */
+  private directShown = new Set<MediaEntry>();
+  private placedNow = new Set<MediaEntry>();
   /** The preview's on-screen size, kept by an observer so frames never have to ask for layout. */
   private previewSize = { w: 0, h: 0 };
   private previewObserver: ResizeObserver | null = null;
@@ -109,7 +111,7 @@ class Engine {
     }
     this.directHost?.remove();
     this.directHost = null;
-    this.directShown = null;
+    this.directShown.clear();
     if (canvas?.parentElement) {
       const host = document.createElement('div');
       host.className = 'direct-host';
@@ -265,13 +267,13 @@ class Engine {
   /** A snapshot of playback health, with the shown video's own frame counts. */
   statsSnapshot() {
     const videos = [...this.media.values()].filter((m) => m.el instanceof HTMLVideoElement);
-    const lead = this.directShown?.el ?? (videos.find((m) => !m.el.paused) ?? videos[0])?.el;
+    const lead = [...this.directShown][0]?.el ?? (videos.find((m) => !m.el.paused) ?? videos[0])?.el;
     const q = lead instanceof HTMLVideoElement && lead.getVideoPlaybackQuality ? lead.getVideoPlaybackQuality() : null;
     return {
       ...this.stats,
       fps: this.stats.ms > 0 ? (this.stats.frames * 1000) / this.stats.ms : 0,
       players: this.media.size,
-      direct: !!this.directShown,
+      direct: this.directShown.size > 0,
       dropped: q ? q.droppedVideoFrames : null,
       decoded: q ? q.totalVideoFrames : null,
     };
@@ -290,21 +292,28 @@ class Engine {
     this.clockStartWall = performance.now();
   }
 
-  /** The bottom layer, if it's a video the page can show as is (nothing that only the canvas can draw). */
-  private directCandidate(t: number): { clipId: string; entry: MediaEntry } | null {
-    if (!this.directVideo || !this.directHost || this.exportCtx) return null;
+  /**
+   * The videos at the bottom of the frame that the page can show as they are, bottom first:
+   * the main video, and during a transition the incoming one too (its motion becomes CSS).
+   * Stops at the first layer only the canvas can draw, since the canvas sits above them all.
+   */
+  private directLayers(t: number): { clipId: string; entry: MediaEntry }[] {
+    if (!this.directVideo || !this.directHost || this.exportCtx) return [];
     const { project } = useEditor.getState();
-    const layer = activeLayers(project, t).find((l) => !l.track.hidden && l.track.kind !== 'audio' && l.clip.kind !== 'audio');
-    if (!layer) return null;
-    const { clip } = layer;
-    if (clip.kind !== 'video' || clip.chroma || spotlightActive(clip, layer.local) || clip.adjust.vignette > 0 || layer.transition) return null;
-    if (motionFor(layer).wipe !== null) return null;
-    const entry = this.media.get(clip.id);
-    if (!entry || !(entry.el instanceof HTMLVideoElement) || !entry.el.videoWidth) return null;
-    return { clipId: clip.id, entry };
+    const out: { clipId: string; entry: MediaEntry }[] = [];
+    for (const layer of activeLayers(project, t)) {
+      if (layer.track.hidden || layer.track.kind === 'audio' || layer.clip.kind === 'audio') continue;
+      const { clip } = layer;
+      if (clip.kind !== 'video' || clip.chroma || spotlightActive(clip, layer.local) || clip.adjust.vignette > 0) break;
+      if (motionFor(layer).wipe !== null) break;
+      const entry = this.media.get(clip.id);
+      if (!entry || !(entry.el instanceof HTMLVideoElement) || !entry.el.videoWidth) break;
+      out.push({ clipId: clip.id, entry });
+    }
+    return out;
   }
 
-  private placeDirect(entry: MediaEntry, p: DirectPlacement) {
+  private placeDirect(entry: MediaEntry, p: DirectPlacement, order: number) {
     const canvas = this.preview;
     const host = this.directHost;
     if (!canvas || !host) return;
@@ -319,8 +328,8 @@ class Engine {
       entry.wrap = wrap;
     }
     if (wrap.parentElement !== host) host.appendChild(wrap);
-    if (this.directShown && this.directShown !== entry && this.directShown.wrap) this.directShown.wrap.style.display = 'none';
-    this.directShown = entry;
+    this.directShown.add(entry);
+    this.placedNow.add(entry);
     host.style.background = settings.background;
 
     const c = p.clip.crop;
@@ -339,6 +348,7 @@ class Engine {
       height: `${h}px`,
       transform: p.rotation ? `rotate(${p.rotation}deg)` : '',
       opacity: p.alpha < 1 ? String(p.alpha) : '',
+      zIndex: String(order),
     });
     setStyle(entry.el as HTMLVideoElement, {
       left: `${-left * innerW}px`,
@@ -352,10 +362,14 @@ class Engine {
     });
   }
 
-  private hideDirect() {
-    if (this.directShown?.wrap) this.directShown.wrap.style.display = 'none';
-    this.directShown = null;
-    if (this.directHost) this.directHost.style.background = '';
+  /** Hides directly shown videos that this frame didn't place. */
+  private hideUnplaced() {
+    for (const e of this.directShown) {
+      if (this.placedNow.has(e)) continue;
+      if (e.wrap) e.wrap.style.display = 'none';
+      this.directShown.delete(e);
+    }
+    if (!this.directShown.size && this.directHost) this.directHost.style.background = '';
   }
 
   private dispose(clipId: string) {
@@ -366,7 +380,7 @@ class Engine {
     entry.el.load();
     entry.gain?.disconnect();
     entry.wrap?.remove();
-    if (this.directShown === entry) this.directShown = null;
+    this.directShown.delete(entry);
     this.media.delete(clipId);
   }
 
@@ -573,24 +587,26 @@ class Engine {
     this.dirtyFrames--;
     if (this.preview) {
       const ctx = this.preview.getContext('2d');
-      const direct = this.directCandidate(shown);
-      let placed: MediaEntry | null = null;
+      const direct = this.directLayers(shown);
+      this.placedNow.clear();
       if (ctx) {
         this.boxes = renderFrame(ctx, project, shown, {
           getSource: this.getSource,
           getImage: this.getImage,
-          direct: direct
+          // Phones draw a lighter preview while playing; pausing shows full quality again.
+          lite: this.directVideo && playing,
+          direct: direct.length
             ? {
-                clipId: direct.clipId,
-                place: (p) => {
-                  this.placeDirect(direct.entry, p);
-                  placed = direct.entry;
+                clipIds: direct.map((d) => d.clipId),
+                place: (clipId, p, order) => {
+                  const d = direct.find((x) => x.clipId === clipId);
+                  if (d) this.placeDirect(d.entry, p, order);
                 },
               }
             : undefined,
         });
       }
-      if (!placed) this.hideDirect();
+      this.hideUnplaced();
     }
     if (this.exportCtx) renderFrame(this.exportCtx, project, t, { getSource: this.getSource, getImage: this.getImage });
     for (const fn of this.listeners) fn(this.boxes);
@@ -683,7 +699,7 @@ export const engine = new Engine();
 export { Engine };
 
 /** Writes inline styles only when they change, to avoid needless style work every frame. */
-function setStyle(el: HTMLElement, styles: Partial<Record<'display' | 'left' | 'top' | 'width' | 'height' | 'transform' | 'transformOrigin' | 'opacity' | 'filter', string>>) {
+function setStyle(el: HTMLElement, styles: Partial<Record<'display' | 'left' | 'top' | 'width' | 'height' | 'transform' | 'transformOrigin' | 'opacity' | 'filter' | 'zIndex', string>>) {
   for (const [k, v] of Object.entries(styles) as [keyof typeof styles, string][]) {
     if (el.style[k] !== v) el.style[k] = v;
   }

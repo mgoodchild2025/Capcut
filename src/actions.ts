@@ -1003,6 +1003,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
 
     // Player photos and clips: the featured player, and the roster for team reels and the lineup.
     const roster = style.roster ? w.info.roster.filter((r) => (style.roster === 'intros' ? r.starter : true) && assetOf(r.assetId)) : [];
+    // The opponent's starters too, in a matchup.
+    if (style.opponents) roster.push(...(w.info.oppRoster ?? []).filter((r) => r.starter && assetOf(r.assetId)));
     const media: { key: string; assetId: string; cutout: boolean }[] = [
       ...(style.subject === 'player' && assetOf(w.info.photo) ? [{ key: 'photo', assetId: w.info.photo!, cutout: !!w.info.photoCutout }] : []),
       ...roster.map((r) => ({ key: r.key, assetId: r.assetId!, cutout: !!r.cutout })),

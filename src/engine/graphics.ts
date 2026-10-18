@@ -1531,6 +1531,617 @@ function drawTelestrator(g: G) {
   ctx.restore();
 }
 
+// ---------------------------------------------------------------------------
+// Matchups, wins and awards
+
+/** A five-pointed star centred at (cx, cy). */
+function star(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, rot = 0, inner = 0.45) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = rot - Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r * inner : r;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+}
+
+/** Text set around a circle, reading clockwise from `start` radians; `p` (0..1) draws it in. */
+function arcText(g: G, text: string, cx: number, cy: number, r: number, size: number, start: number, p = 1, color = '#fff') {
+  const { ctx } = g;
+  font(ctx, size, 800, SANS);
+  const chars = [...text];
+  const widths = chars.map((c) => ctx.measureText(c).width + size * 0.12);
+  const total = widths.reduce((a, b) => a + b, 0);
+  // Spread evenly round the whole circle.
+  const k = (Math.PI * 2 * r) / total;
+  let a = start;
+  const shown = Math.floor(chars.length * clamp01(p));
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < shown; i++) {
+    const da = (widths[i] * k) / r;
+    const mid = a + da / 2;
+    ctx.save();
+    ctx.translate(cx + Math.cos(mid) * r, cy + Math.sin(mid) * r);
+    ctx.rotate(mid + Math.PI / 2);
+    ctx.fillText(chars[i], 0, 0);
+    ctx.restore();
+    a += da;
+  }
+  ctx.restore();
+}
+
+/** The same graphic state, drawn in another team's colours. */
+function inColors(g: G, colors: [string, string]): G {
+  const c2 = g.look === 'championship' ? g.c2 : colors[1];
+  return { ...g, c1: colors[0], c2, ink: g.look === 'championship' ? g.ink : inkFor(c2) };
+}
+
+/** Initials of a team name, for a crest when there's no logo: "Westside Storm" -> "WS". */
+const initials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .filter((w) => /^[A-Za-z]/.test(w))
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('') || name.trim().slice(0, 2).toUpperCase();
+
+/** A team's logo slamming in, or a monogram crest in its colours when there isn't one. */
+function crest(g: G, id: string | undefined, name: string, cx: number, cy: number, size: number, start: number) {
+  if (id && g.img(id)) return logoSlam(g, id, cx, cy, size, start);
+  const p = seg(g.t, start, start + 0.55);
+  if (p <= 0) return false;
+  const { ctx } = g;
+  const s = g.look === 'classic' ? lerp(0.94, 1, eOut(p)) : lerp(1.7, 1, eBack(p));
+  const r = size * 0.42 * s;
+  ctx.save();
+  ctx.globalAlpha *= clamp01(p * 3);
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = soft(size * 0.12);
+  const gr = ctx.createLinearGradient(cx, cy - r, cx, cy + r);
+  gr.addColorStop(0, shade(g.c1, 0.15));
+  gr.addColorStop(1, shade(g.c1, -0.45));
+  ctx.fillStyle = gr;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = r * 0.09;
+  ctx.strokeStyle = accent(g);
+  ctx.stroke();
+  ctx.lineWidth = r * 0.025;
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.83, 0, Math.PI * 2);
+  ctx.stroke();
+  const ini = initials(name);
+  headline(g, ini, cx, cy + r * 0.3, fit(ctx, ini, r * 1.3, r * 0.85), { color: '#fff', shadow: false });
+  ctx.restore();
+  return true;
+}
+
+/**
+ * Versus title: the frame split on a diagonal, each team's half in its own colours with its logo
+ * (or a crest), name and record, and VS slamming in where they meet.
+ */
+function drawVersus(g: G) {
+  const { ctx, W, H, S, t, portrait, spec } = g;
+  const tx = spec.text;
+  const them = inColors(g, spec.oppColors ?? ['#3a3d48', '#e5e7eb']);
+  ctx.fillStyle = '#05060a';
+  ctx.fillRect(0, 0, W, H);
+  // The dividing line: across the middle, leaning.
+  const lean = S * 0.17;
+  const A: [number, number] = portrait ? [0, H / 2 + lean] : [W / 2 + lean, 0];
+  const B: [number, number] = portrait ? [W, H / 2 - lean] : [W / 2 - lean, H];
+  const halves: { gg: G; poly: [number, number][]; from: number; name: string; sub: string; logo?: string; at: [number, number]; start: number }[] = [
+    {
+      gg: g,
+      poly: portrait ? [[0, 0], [W, 0], B, A] : [[0, 0], A, B, [0, H]],
+      from: -1,
+      name: tx.usName || 'HOME',
+      sub: tx.usSub || '',
+      logo: spec.logo,
+      at: portrait ? [W / 2, H * 0.17] : [W * 0.25, H * 0.4],
+      start: 0.45,
+    },
+    {
+      gg: them,
+      poly: portrait ? [A, B, [W, H], [0, H]] : [A, [W, 0], [W, H], B],
+      from: 1,
+      name: tx.themName || 'AWAY',
+      sub: tx.themSub || '',
+      logo: spec.oppLogo,
+      at: portrait ? [W / 2, H * 0.83] : [W * 0.75, H * 0.4],
+      start: 0.62,
+    },
+  ];
+  const push = lerp(1.0, 1.04, clamp01(t / g.d));
+  halves.forEach(({ gg, poly, from }, i) => {
+    const p = eExpo(seg(t, 0.05 + i * 0.1, 0.65 + i * 0.1));
+    if (p <= 0) return;
+    ctx.save();
+    ctx.translate((1 - p) * from * W, 0);
+    ctx.beginPath();
+    poly.forEach(([x, y]) => ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.clip();
+    // Team colour field, lit from the crest.
+    const [lx, ly] = halves[i].at;
+    const rg = ctx.createRadialGradient(lx, ly, 0, lx, ly, Math.hypot(W, H) * 0.6 * push);
+    rg.addColorStop(0, shade(gg.c1, 0.12));
+    rg.addColorStop(0.55, shade(gg.c1, -0.35));
+    rg.addColorStop(1, shade(gg.c1, -0.8));
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+    // Fine diagonal stripes drifting along.
+    if (g.look !== 'classic') {
+      ctx.strokeStyle = rgba(gg.c2, 0.07);
+      ctx.lineWidth = S * 0.012;
+      const step = S * 0.05;
+      const drift = (t * S * 0.03 * (i ? -1 : 1)) % step;
+      for (let x = -H; x < W + H; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x + drift, 0);
+        ctx.lineTo(x + drift - H * 0.6, H);
+        ctx.stroke();
+      }
+    }
+    // Giant initials watermark.
+    const ini = initials(halves[i].name);
+    ctx.globalAlpha = 0.08;
+    font(ctx, S * 0.62, 900);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(ini, lx + (i ? 1 : -1) * S * 0.12 * (1 - push + 1), ly + S * 0.05);
+    ctx.restore();
+  });
+  if (g.look !== 'classic') streaks(g, H * 0.1, H * 0.9, 5, 0.35);
+  // Crests, names and records.
+  halves.forEach(({ gg, name, sub, logo, at: [cx, cy], start }, i) => {
+    const size = S * (portrait ? 0.32 : 0.3);
+    crest(gg, logo, name, cx, cy, size, start);
+    const nm = name.toUpperCase();
+    const ns = fit(ctx, nm, portrait ? W * 0.84 : W * 0.4, S * (portrait ? 0.12 : 0.1));
+    const ny = portrait ? (i ? cy - size * 0.62 - S * 0.03 : cy + size * 0.62 + ns * 0.95) : cy + size * 0.62 + ns * 0.95;
+    headline(gg, nm, cx, ny, ns, { reveal: seg(t, start + 0.35, start + 0.85), sheen: seg(t, 1.6 + i * 0.2, 2.4 + i * 0.2) });
+    if (sub) {
+      ctx.save();
+      ctx.globalAlpha = eOut(seg(t, start + 0.6, start + 1.1));
+      const ss = fit(ctx, sub.toUpperCase(), portrait ? W * 0.8 : W * 0.38, S * 0.036, 700, SANS, 0.14);
+      label(gg, sub.toUpperCase(), cx, portrait && i ? ny - ns * 1.05 : ny + ss * 1.6, ss, rgba('#ffffff', 0.85), 'center', 700, 0.14);
+      ctx.restore();
+    }
+  });
+  // The seam: a bright line drawn along the split.
+  const lp = eExpo(seg(t, 0.55, 1.0));
+  if (lp > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(2, S * 0.008);
+    ctx.shadowColor = rgba(g.c2, 0.9);
+    ctx.shadowBlur = soft(S * 0.03);
+    const mx = (A[0] + B[0]) / 2;
+    const my = (A[1] + B[1]) / 2;
+    ctx.beginPath();
+    ctx.moveTo(lerp(mx, A[0], lp), lerp(my, A[1], lp));
+    ctx.lineTo(lerp(mx, B[0], lp), lerp(my, B[1], lp));
+    ctx.stroke();
+    ctx.restore();
+  }
+  // VS badge.
+  const vp = seg(t, 0.85, 1.25);
+  if (vp > 0) {
+    const r = S * (portrait ? 0.11 : 0.1) * (g.look === 'classic' ? lerp(0.9, 1, eOut(vp)) : lerp(1.8, 1, eBack(vp)));
+    const ring = seg(t, 1.0, 1.7);
+    ctx.save();
+    if (ring > 0 && ring < 1 && g.look !== 'classic') {
+      ctx.strokeStyle = rgba('#ffffff', 0.8 * (1 - ring));
+      ctx.lineWidth = S * 0.01 * (1 - ring);
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, r * (1 + ring * 2.2), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha *= clamp01(vp * 3);
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(Math.PI / 4);
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = soft(r * 0.4);
+    ctx.fillStyle = '#0b0c12';
+    ctx.fillRect(-r * 0.78, -r * 0.78, r * 1.56, r * 1.56);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = accent(g);
+    ctx.lineWidth = r * 0.1;
+    ctx.strokeRect(-r * 0.78, -r * 0.78, r * 1.56, r * 1.56);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha *= clamp01(vp * 3);
+    headline(g, 'VS', W / 2, H / 2 + r * 0.3, r * 0.85, { color: '#fff', shadow: false, sheen: seg(t, 1.3, 2.0) });
+    ctx.restore();
+  }
+  // Kicker on top, details along the bottom.
+  const kick = (tx.kicker || '').toUpperCase();
+  if (kick) {
+    const kp = eExpo(seg(t, 1.1, 1.5));
+    const ks = S * 0.04;
+    font(ctx, ks, 800, SANS);
+    tracking(ctx, ks * 0.2);
+    const kw = ctx.measureText(kick).width + ks * 2.4;
+    tracking(ctx, 0);
+    const ky = portrait ? H * 0.05 : H * 0.08;
+    ctx.fillStyle = accent(g);
+    para(ctx, W / 2 - (kw * kp) / 2 - ks * 0.2, ky - ks * 0.95, kw * kp, ks * 1.9, ks * 0.4);
+    ctx.fill();
+    if (kp > 0.6) label(g, kick, W / 2, ky, ks, g.ink, 'center', 800, 0.2);
+  }
+  const sub = (tx.sub || '').toUpperCase();
+  if (sub) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1.4, 1.9));
+    const ss = fit(ctx, sub, W * 0.86, S * 0.034, 700, SANS, 0.16);
+    const sy = portrait ? H * 0.955 : H * 0.92;
+    ctx.fillStyle = 'rgba(5,6,10,0.65)';
+    ctx.fillRect(0, sy - ss * 1.3, W, ss * 2.6);
+    label(g, sub, W / 2, sy, ss, '#fff', 'center', 700, 0.16);
+    ctx.restore();
+  }
+  panelWipe(g, seg(t, g.d - 0.5, g.d + 0.15));
+}
+
+/** Confetti falling through the frame from `start`: deterministic, so every frame matches the export. */
+function confetti(g: G, start: number, count: number) {
+  const { ctx, W, H, S, t, c1, c2 } = g;
+  const tt = t - start;
+  if (tt <= 0) return;
+  const colors = [c2, '#ffffff', shade(c1, 0.4), g.look === 'neon' ? c2 : '#f5d77a'];
+  ctx.save();
+  for (let i = 0; i < count; i++) {
+    const delay = hash(i + 3) * 1.6;
+    const life = tt - delay;
+    if (life <= 0) continue;
+    const speed = H * (0.16 + hash(i + 9) * 0.18);
+    const y = -S * 0.05 + life * speed;
+    if (y > H + S * 0.05) continue;
+    const x = hash(i) * W + Math.sin(life * (1.5 + hash(i + 4) * 2) + i) * S * 0.04;
+    const spin = life * (4 + hash(i + 6) * 6) + i;
+    const w = S * (0.008 + hash(i + 8) * 0.008);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(spin * 0.4);
+    ctx.scale(1, Math.cos(spin));
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(-w, -w * 0.5, w * 2, w);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+/** The win: VICTORY slams in over light rays, the final score lands between the logos, confetti falls. */
+function drawVictory(g: G) {
+  const { ctx, W, H, S, t, portrait, spec } = g;
+  const tx = spec.text;
+  backdrop(g);
+  const cy = portrait ? H * 0.47 : H * 0.5;
+  // Light rays from behind the title.
+  if (g.look !== 'classic') {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 0.35, 0.9));
+    ctx.translate(W / 2, cy);
+    ctx.rotate(t * 0.12);
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 18; i++) {
+      ctx.rotate((Math.PI * 2) / 18);
+      const gr = ctx.createLinearGradient(0, 0, S * 1.3, 0);
+      gr.addColorStop(0, rgba(g.c2, 0.3));
+      gr.addColorStop(1, rgba(g.c2, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(S * 1.4, -S * 0.06);
+      ctx.lineTo(S * 1.4, S * 0.06);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  // A jolt as the title lands.
+  const shake = 1 - seg(t, 0.5, 0.85);
+  ctx.save();
+  if (shake < 1 && shake > 0 && g.look !== 'classic') ctx.translate((hash(Math.floor(t * 60)) - 0.5) * S * 0.025 * shake, (hash(Math.floor(t * 60) + 1) - 0.5) * S * 0.025 * shake);
+  const logoY = portrait ? H * 0.2 : H * 0.14;
+  logoSlam(g, spec.logo, W / 2, logoY, S * (portrait ? 0.28 : 0.17), 0.1);
+  const title = (tx.title || 'VICTORY').toUpperCase();
+  const ts = fit(ctx, title, W * 0.9, S * (portrait ? 0.26 : 0.2));
+  const tp = seg(t, 0.35, 0.7);
+  if (tp > 0) {
+    const s = g.look === 'classic' ? lerp(0.92, 1, eOut(tp)) : lerp(2.2, 1, eOut(tp));
+    ctx.save();
+    ctx.globalAlpha *= clamp01(tp * 2.5);
+    ctx.translate(W / 2, cy + ts * 0.35);
+    ctx.scale(s, s);
+    headline(g, title, 0, 0, ts, { color: g.metal ? g.c2 : '#fff', sheen: seg(t, 1.3, 2.2), stroke: g.look === 'broadcast' ? g.c2 : undefined });
+    ctx.restore();
+  }
+  // Kicker above the title.
+  const kick = (tx.kicker || '').toUpperCase();
+  if (kick) {
+    const kp = eExpo(seg(t, 0.75, 1.1));
+    const ks = S * 0.042;
+    font(ctx, ks, 800, SANS);
+    tracking(ctx, ks * 0.2);
+    const kw = ctx.measureText(kick).width + ks * 2.4;
+    tracking(ctx, 0);
+    const ky = cy - ts * 0.75 - ks * 0.6;
+    ctx.fillStyle = accent(g);
+    para(ctx, W / 2 - kw / 2 - ks * 0.2, ky - ks * 0.95, kw * kp, ks * 1.9, ks * 0.4);
+    ctx.fill();
+    if (kp > 0.6) label(g, kick, W / 2, ky, ks, g.ink, 'center', 800, 0.2);
+  }
+  ctx.restore();
+  // Final score between the two logos.
+  const score = tx.score || '';
+  let y = cy + ts * 0.35 + S * (portrait ? 0.2 : 0.15);
+  if (score) {
+    const sp = eBack(seg(t, 1.0, 1.4));
+    const ss = S * (portrait ? 0.16 : 0.13);
+    if (sp > 0) {
+      ctx.save();
+      ctx.translate(W / 2, y);
+      ctx.scale(Math.max(0.01, sp), Math.max(0.01, sp));
+      headline(g, score.replace('-', ' – '), 0, ss * 0.35, ss, { color: g.c2, shadow: true });
+      ctx.restore();
+      font(ctx, ss, 900);
+      const sw = ctx.measureText(score.replace('-', ' – ')).width;
+      const off = sw / 2 + ss * 0.75;
+      const lk = eOut(seg(t, 1.2, 1.6));
+      logoAt(g, spec.logo, W / 2 - off - (1 - lk) * S * 0.1, y, ss * 0.95, lk);
+      logoAt(g, spec.oppLogo, W / 2 + off + (1 - lk) * S * 0.1, y, ss * 0.95, lk * 0.85);
+    }
+    y += ss * 0.95;
+  }
+  const sub = (tx.sub || '').toUpperCase();
+  if (sub) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1.3, 1.8));
+    const ss = fit(ctx, sub, W * 0.86, S * (portrait ? 0.045 : 0.04), 700, SANS, 0.16);
+    label(g, sub, W / 2, y + ss * (score ? 0.4 : 1.2), ss, '#e5e7eb', 'center', 700, 0.16);
+    ctx.restore();
+  }
+  // White flash on impact, then confetti.
+  const flash = seg(t, 0.5, 0.85);
+  if (flash > 0 && flash < 1 && g.look !== 'classic') {
+    ctx.fillStyle = `rgba(255,255,255,${0.55 * (1 - flash)})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (g.look !== 'classic') confetti(g, 0.55, LITE ? 50 : 110);
+  panelWipe(g, seg(t, g.d - 0.5, g.d + 0.15));
+}
+
+/** An award emblem: a ring of lettering, ticks turning, a star landing in the middle. */
+function emblem(g: G, cx: number, cy: number, R: number, ring: string, start: number) {
+  const { ctx, t } = g;
+  const p = eExpo(seg(t, start, start + 0.6));
+  if (p <= 0) return;
+  ctx.save();
+  ctx.globalAlpha *= clamp01(p * 2);
+  // Disc.
+  ctx.shadowColor = rgba(g.c2, 0.6);
+  ctx.shadowBlur = soft(R * 0.4);
+  const gr = ctx.createRadialGradient(cx, cy - R * 0.3, R * 0.1, cx, cy, R);
+  gr.addColorStop(0, shade(g.c1, 0.2));
+  gr.addColorStop(1, shade(g.c1, -0.6));
+  ctx.fillStyle = gr;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * p, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // Rings.
+  ctx.strokeStyle = accent(g);
+  ctx.lineWidth = R * 0.05;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.98, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p);
+  ctx.stroke();
+  ctx.lineWidth = R * 0.018;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.66, -Math.PI / 2, -Math.PI / 2 - Math.PI * 2 * p, true);
+  ctx.stroke();
+  // Ticks turning the other way.
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-t * 0.3);
+  ctx.strokeStyle = rgba('#ffffff', 0.5);
+  ctx.lineWidth = R * 0.012;
+  for (let i = 0; i < 60; i++) {
+    ctx.rotate((Math.PI * 2) / 60);
+    ctx.beginPath();
+    ctx.moveTo(R * 0.6, 0);
+    ctx.lineTo(R * (i % 5 ? 0.57 : 0.53), 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+  // Lettering round the ring, turning slowly.
+  if (ring) arcText(g, ring, cx, cy, R * 0.82, R * 0.13, -Math.PI / 2 + t * 0.12, seg(t, start + 0.2, start + 1.0), '#fff');
+  // The star lands.
+  const sp = seg(t, start + 0.45, start + 0.85);
+  if (sp > 0) {
+    const s = g.look === 'classic' ? lerp(0.9, 1, eOut(sp)) : lerp(2, 1, eBack(sp));
+    ctx.save();
+    ctx.globalAlpha *= clamp01(sp * 3);
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = soft(R * 0.1);
+    star(ctx, cx, cy, R * 0.42 * s, (1 - eOut(sp)) * 1.2);
+    if (g.metal) ctx.fillStyle = g.metal;
+    else ctx.fillStyle = g.c2;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = R * 0.02;
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.stroke();
+    ctx.restore();
+  }
+  // A glint across the disc.
+  const gl = seg(t, start + 1.2, start + 1.9);
+  if (gl > 0 && gl < 1 && !LITE) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    const x = lerp(cx - R * 1.6, cx + R * 1.6, eInOut(gl));
+    const lg = ctx.createLinearGradient(x - R * 0.3, cy - R, x + R * 0.3, cy + R);
+    lg.addColorStop(0, 'rgba(255,255,255,0)');
+    lg.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+    lg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(cx - R, cy - R, R * 2, R * 2);
+    ctx.restore();
+  }
+}
+
+/** Splits "Play of the Week" into its lead-in and the word that goes big. */
+function awardWords(award: string): [string, string] {
+  const words = award.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return ['', words[0] ?? 'PLAY'];
+  return [words.slice(0, -1).join(' '), words[words.length - 1]];
+}
+
+/** Play of the Week title package: emblem, the award word huge, the week and the player. */
+function drawPotw(g: G) {
+  const { ctx, W, H, S, t, portrait, spec } = g;
+  const tx = spec.text;
+  backdrop(g);
+  // Two spotlights sweeping down.
+  if (g.look !== 'classic') {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const side of [-1, 1]) {
+      const a = Math.sin(t * 0.9 + (side > 0 ? 1.4 : 0)) * 0.25 + side * 0.3;
+      const ox = W / 2 + side * W * 0.45;
+      ctx.save();
+      ctx.translate(ox, -S * 0.05);
+      ctx.rotate(a);
+      const gr = ctx.createLinearGradient(0, 0, 0, H * 1.1);
+      gr.addColorStop(0, rgba('#ffffff', 0.22));
+      gr.addColorStop(1, rgba(g.c2, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(-S * 0.02, 0);
+      ctx.lineTo(S * 0.02, 0);
+      ctx.lineTo(S * 0.3, H * 1.1);
+      ctx.lineTo(-S * 0.3, H * 1.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+  const award = tx.award || 'Play of the Week';
+  const [lead, big] = awardWords(award);
+  const ringText = `${award.toUpperCase()}  ★  ${award.toUpperCase()}  ★  `;
+  const R = S * (portrait ? 0.3 : 0.3);
+  const ex = portrait ? W / 2 : W * 0.28;
+  const ey = portrait ? H * 0.28 : H * 0.48;
+  emblem(g, ex, ey, R, ringText, 0.1);
+  // Words.
+  const left = portrait ? W / 2 : W * 0.53;
+  const align: CanvasTextAlign = portrait ? 'center' : 'left';
+  const maxW = portrait ? W * 0.9 : W * 0.43;
+  let y = portrait ? ey + R + S * 0.14 : H * 0.3;
+  if (lead) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 0.6, 1.0));
+    const ls = fit(ctx, lead, maxW, S * 0.06, 800, SANS, 0.3);
+    label(g, lead, left, y, ls, '#e5e7eb', align, 800, lerp(0.6, 0.3, eOut(seg(t, 0.6, 1.2))));
+    ctx.restore();
+    y += S * 0.03;
+  }
+  const bs = fit(ctx, big, maxW, S * (portrait ? 0.3 : 0.24));
+  headline(g, big, left, y + bs * 0.86, bs, { align, color: g.metal ? g.c2 : '#fff', reveal: seg(t, 0.75, 1.2), sheen: seg(t, 1.5, 2.4) });
+  y += bs * 0.98;
+  const week = (tx.week || '').toUpperCase();
+  if (week) {
+    const ws = S * 0.045;
+    const wp = eExpo(seg(t, 1.05, 1.45));
+    font(ctx, ws, 900, SANS);
+    tracking(ctx, ws * 0.2);
+    const ww = ctx.measureText(week).width + ws * 2.2;
+    tracking(ctx, 0);
+    const wx = portrait ? left - ww / 2 : left;
+    ctx.fillStyle = accent(g);
+    para(ctx, wx, y, ww * wp, ws * 1.9, ws * 0.4);
+    ctx.fill();
+    if (wp > 0.6) label(g, week, wx + ws * 1.1, y + ws * 0.98, ws, g.ink, 'left', 900, 0.2);
+    y += ws * 2.6;
+  }
+  const name = (tx.name || '').toUpperCase();
+  if (name) {
+    const ns = fit(ctx, name, maxW, S * (portrait ? 0.1 : 0.085));
+    headline(g, name, left, y + ns * 0.9, ns, { align, reveal: seg(t, 1.25, 1.7) });
+    y += ns * 1.05;
+  }
+  const sub = tx.sub || '';
+  if (sub) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1.5, 2.0));
+    const ss = fit(ctx, sub, maxW, S * 0.036, 600, SANS);
+    label(g, sub, left, y + ss * 1.1, ss, '#cbd5e1', align, 600, 0.06);
+    ctx.restore();
+  }
+  logoAt(g, spec.logo, portrait ? W - S * 0.11 : W - S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 1.2, 1.6)));
+  panelWipe(g, seg(t, g.d - 0.5, g.d + 0.15));
+}
+
+/** Corner badge over the action: a small emblem and the award on a plate, top right. */
+function drawBadge(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  const title = (spec.text.title || '').toUpperCase();
+  const sub = (spec.text.sub || '').toUpperCase();
+  const k = eExpo(seg(t, 0.1, 0.6)) * (1 - eInOut(seg(t, d - 0.45, d - 0.1)));
+  if (k <= 0) return;
+  const r = S * 0.052;
+  const cx = W - S * 0.05 - r;
+  const cy = (portrait ? H * 0.06 : S * 0.06) + r;
+  const fs = S * 0.03;
+  font(ctx, fs, 900, SANS);
+  tracking(ctx, fs * 0.12);
+  const tw = Math.max(ctx.measureText(title).width, sub ? ctx.measureText(sub).width * 0.75 : 0);
+  tracking(ctx, 0);
+  const pw = (tw + fs * 2.2) * k;
+  const ph = r * 1.5;
+  ctx.save();
+  ctx.globalAlpha *= clamp01(k * 2);
+  // Plate grows out to the left of the emblem.
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = soft(fs);
+  ctx.fillStyle = shade(g.c1, -0.3, 0.92);
+  para(ctx, cx - r * 0.2 - pw, cy - ph / 2, pw + r * 0.2, ph, ph * 0.35);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = accent(g);
+  ctx.fillRect(cx - r * 0.2 - pw, cy + ph / 2 - Math.max(2, fs * 0.12), pw, Math.max(2, fs * 0.12));
+  if (k > 0.85) {
+    label(g, title, cx - r * 1.25, cy - (sub ? fs * 0.35 : -fs * 0.05), fs, '#fff', 'right', 900, 0.12);
+    if (sub) label(g, sub, cx - r * 1.25, cy + fs * 0.75, fs * 0.72, g.metal ? '#f5d77a' : g.c2, 'right', 800, 0.18);
+  }
+  // Emblem.
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = shade(g.c1, -0.45);
+  ctx.fill();
+  ctx.lineWidth = r * 0.12;
+  ctx.strokeStyle = accent(g);
+  ctx.stroke();
+  star(ctx, cx, cy, r * 0.55, Math.sin(t * 1.4) * 0.15);
+  ctx.fillStyle = g.metal ?? g.c2;
+  ctx.fill();
+  ctx.restore();
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -1543,10 +2154,14 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   closer: drawCloser,
   replay: drawReplay,
   telestrator: drawTelestrator,
+  versus: drawVersus,
+  victory: drawVictory,
+  potw: drawPotw,
+  badge: drawBadge,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
-export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer'];
+export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {

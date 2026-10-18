@@ -2,7 +2,7 @@ import type { Asset, GraphicLook, Project } from '../model/types';
 import type { SportId } from './sports';
 import { buildBroadcastReel } from './broadcast';
 
-export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'team' | 'lineup';
+export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'potw' | 'team' | 'victory' | 'lineup' | 'matchup';
 
 /** Which wizard steps a style uses and what it's about. */
 export type ReelSubject = 'player' | 'team';
@@ -18,6 +18,8 @@ export const REEL_STYLES: {
   roster?: 'credits' | 'intros';
   /** Asks the user to spot their player in each clip. */
   spotlight?: boolean;
+  /** Introduces the opponent's starters too. */
+  opponents?: boolean;
 }[] = [
   {
     id: 'recruiting',
@@ -47,11 +49,29 @@ export const REEL_STYLES: {
     spotlight: true,
   },
   {
+    id: 'potw',
+    title: 'Play of the Week',
+    blurb: 'One unforgettable play, broadcast style: an award title package, the play at full speed, then slow-motion replays from every angle with the analyst\'s pen.',
+    aspect: [1080, 1920],
+    music: 'determined-pursuit',
+    subject: 'player',
+    spotlight: true,
+  },
+  {
     id: 'team',
     title: 'Team reel',
     blurb: 'Vertical 9:16 for the team account: roster card, beat-synced plays credited to each player, team stats and a send-off.',
     aspect: [1080, 1920],
     music: 'hyper-ultra-racing',
+    subject: 'team',
+    roster: 'credits',
+  },
+  {
+    id: 'victory',
+    title: 'Victory reel',
+    blurb: 'The post-game W in 9:16: the final score slams in under confetti, then beat-cut plays credited to each player, game stats and a celebration send-off.',
+    aspect: [1080, 1920],
+    music: 'funked-up',
     subject: 'team',
     roster: 'credits',
   },
@@ -63,6 +83,16 @@ export const REEL_STYLES: {
     music: 'doomed',
     subject: 'team',
     roster: 'intros',
+  },
+  {
+    id: 'matchup',
+    title: 'Matchup lineup',
+    blurb: 'Game day with both teams: a split-screen versus title, the visitors\' starters in their colours, then yours, and a face-off to start the game.',
+    aspect: [1080, 1920],
+    music: 'hyper-ultra-racing',
+    subject: 'team',
+    roster: 'intros',
+    opponents: true,
   },
   {
     id: 'recap',
@@ -124,6 +154,15 @@ export interface ReelInfo {
   photoCutout?: boolean;
   /** Heading of the stats board, when the default ("Season stats"...) doesn't fit. */
   statsTitle?: string;
+  /** The opponent's roster (matchup lineup), colours and record. */
+  oppRoster?: RosterPlayer[];
+  oppColors?: [string, string];
+  oppRecord?: string;
+  /** When and where, e.g. "Fri 7 PM · Lincoln Gym" (matchup lineup). */
+  venue?: string;
+  /** The award ("Play of the Week") and its week ("Week 7"). */
+  award?: string;
+  week?: string;
 }
 
 export interface ReelClip {

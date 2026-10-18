@@ -7,7 +7,7 @@ import { REEL_STYLES } from '../templates/reel';
 import { Icon } from '../ui/Icon';
 import { formatDuration, isIOS, isStandalone } from '../utils';
 
-const TILE_WORD: Record<string, string> = { recruiting: '#12', hype: '#12', spotlight: 'MVP', team: 'TEAM', lineup: 'LINEUP', recap: 'SEASON' };
+const TILE_WORD: Record<string, string> = { recruiting: '#12', hype: '#12', spotlight: 'MVP', potw: 'POTW', team: 'TEAM', victory: 'WIN', lineup: 'LINEUP', matchup: 'VS', recap: 'SEASON' };
 
 export function Home() {
   const [drafts, setDrafts] = useState<DraftSummary[] | null>(null);

@@ -5,6 +5,8 @@ export interface Sport {
   positions: string[];
   plays: string[];
   stats: string[];
+  /** How a game gets under way ("First serve", "Tip-off"), for the matchup's face-off. */
+  start: string;
   scoring: {
     /** Volleyball (and tennis-like) games are won on sets; everything else on total points. */
     result: 'sets' | 'points';
@@ -27,6 +29,7 @@ export const SPORTS: Sport[] = [
     positions: ['Outside Hitter', 'Opposite', 'Middle Blocker', 'Setter', 'Libero', 'Defensive Specialist', 'Right Side'],
     plays: ['Kill', 'Ace', 'Block', 'Dig', 'Set', 'Serve receive', 'Save'],
     stats: ['Kills', 'Aces', 'Blocks', 'Digs'],
+    start: 'First serve',
     scoring: { result: 'sets', period: 'Set', short: 'SET', count: 3, unit: 'points' },
   },
   {
@@ -35,6 +38,7 @@ export const SPORTS: Sport[] = [
     positions: ['Point Guard', 'Shooting Guard', 'Small Forward', 'Power Forward', 'Center', 'Guard', 'Forward'],
     plays: ['Three', 'Dunk', 'Layup', 'Block', 'Steal', 'Assist', 'And-one', 'Buzzer beater'],
     stats: ['Points', 'Rebounds', 'Assists', 'Steals'],
+    start: 'Tip-off',
     scoring: { result: 'points', period: 'Quarter', short: 'QTR', count: 4, unit: 'points' },
   },
   {
@@ -43,6 +47,7 @@ export const SPORTS: Sport[] = [
     positions: ['Forward', 'Striker', 'Winger', 'Midfielder', 'Defender', 'Fullback', 'Goalkeeper'],
     plays: ['Goal', 'Assist', 'Save', 'Tackle', 'Free kick', 'Penalty', 'Header'],
     stats: ['Goals', 'Assists', 'Shots', 'Saves'],
+    start: 'Kick-off',
     scoring: { result: 'points', period: 'Half', short: 'HALF', count: 2, unit: 'goals' },
   },
   {
@@ -51,6 +56,7 @@ export const SPORTS: Sport[] = [
     positions: ['Quarterback', 'Running Back', 'Wide Receiver', 'Tight End', 'Linebacker', 'Cornerback', 'Safety', 'Defensive Line', 'Offensive Line', 'Kicker'],
     plays: ['Touchdown', 'Pass', 'Catch', 'Run', 'Sack', 'Interception', 'Tackle', 'Field goal'],
     stats: ['Yards', 'Touchdowns', 'Tackles', 'Interceptions'],
+    start: 'Kickoff',
     scoring: { result: 'points', period: 'Quarter', short: 'QTR', count: 4, unit: 'points' },
   },
   {
@@ -59,6 +65,7 @@ export const SPORTS: Sport[] = [
     positions: ['Pitcher', 'Catcher', 'First Base', 'Second Base', 'Shortstop', 'Third Base', 'Left Field', 'Center Field', 'Right Field', 'Designated Hitter'],
     plays: ['Home run', 'Hit', 'Double', 'Strikeout', 'Catch', 'Double play', 'Stolen base', 'RBI'],
     stats: ['Batting avg', 'Home runs', 'RBI', 'Strikeouts'],
+    start: 'First pitch',
     scoring: { result: 'points', period: 'Inning', short: 'INN', count: 9, unit: 'runs' },
   },
   {
@@ -67,6 +74,7 @@ export const SPORTS: Sport[] = [
     positions: ['Pitcher', 'Catcher', 'First Base', 'Second Base', 'Shortstop', 'Third Base', 'Left Field', 'Center Field', 'Right Field', 'Designated Player'],
     plays: ['Home run', 'Hit', 'Double', 'Strikeout', 'Catch', 'Double play', 'Stolen base', 'RBI'],
     stats: ['Batting avg', 'Home runs', 'RBI', 'Strikeouts'],
+    start: 'First pitch',
     scoring: { result: 'points', period: 'Inning', short: 'INN', count: 7, unit: 'runs' },
   },
   {
@@ -75,6 +83,7 @@ export const SPORTS: Sport[] = [
     positions: ['Center', 'Left Wing', 'Right Wing', 'Defense', 'Goalie'],
     plays: ['Goal', 'Assist', 'Save', 'Hit', 'Breakaway', 'Power play', 'Shootout'],
     stats: ['Goals', 'Assists', 'Points', 'Saves'],
+    start: 'Puck drop',
     scoring: { result: 'points', period: 'Period', short: 'PER', count: 3, unit: 'goals' },
   },
   {
@@ -83,6 +92,7 @@ export const SPORTS: Sport[] = [
     positions: ['Attack', 'Midfield', 'Defense', 'Goalie', 'Face-off', 'Long Stick Midfield'],
     plays: ['Goal', 'Assist', 'Save', 'Ground ball', 'Caused turnover', 'Face-off win'],
     stats: ['Goals', 'Assists', 'Ground balls', 'Saves'],
+    start: 'Face-off',
     scoring: { result: 'points', period: 'Quarter', short: 'QTR', count: 4, unit: 'goals' },
   },
 ];

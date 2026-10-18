@@ -15,6 +15,9 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 - **Boards**: stats with count-up numbers, a roster wall of player tiles with photos, and a final scoreboard with every set or period (sets won for volleyball, total points, goals or runs elsewhere).
 - **Stingers** in team colours cover section changes, and a **closer** with a logo lockup ends the reel.
 - **Instant replay**: switch on **Replay** for a play and its decisive moment runs again at half speed behind a REPLAY wipe, with a corner bug. When your player is spotted, the replay opens on a freeze where the **telestrator** circles them and draws an arrow in, like a TV analyst.
+- **Versus title**: the frame split on a diagonal, each team in its own colours with its logo (or a monogram crest), name and record, and VS slamming in where they meet.
+- **Victory title**: VICTORY lands over light rays with a jolt and a flash, the final score sits between both logos, and confetti falls.
+- **Award package**: an emblem with lettering round its ring and a star landing in the middle, the award word huge (Play of the **Week**), the week and the player, plus a corner badge that rides over the play and its replays.
 - **Four graphics looks**: **Broadcast** (bold TV package), **Championship** (brushed gold, spotlights and sparks), **Neon** (glow and a racing grid) and **Classic** (clean and understated). Switch every graphic at once from the graphic inspector.
 
 1. On the home screen, pick a sport, a look and a template. You can also open the **Sports** tab in the editor.
@@ -24,12 +27,15 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
    | Recruiting reel | 16:9 | College coaches: open, profile card, plays with player IDs, stats, contact details |
    | Hype reel | 9:16 | TikTok and Reels: beat-synced cuts, slow motion, stingers |
    | Player spotlight | 4:5 | Feed posts like Player of the Game or Senior Night |
+   | Play of the Week | 9:16 | One play: award title, the play at full speed, then slow-motion replays of every angle (the first with the analyst's pen, a lone angle also in super slow-mo), then the player |
    | Team reel | 9:16 | The team account: roster wall, each play credited to a player, team stats |
+   | Victory reel | 9:16 | After a win: the score slams in under confetti and the crowd, beat-cut plays credited to players, game stats, final score, a celebration send-off |
    | Starting lineup | 9:16 | Pre-game hype: a player card per starter with their photo, cut-out or clip |
+   | Matchup lineup | 9:16 | Game day with both teams: a versus title, the visitors' starters in their colours with their logo, then yours, and a face-off (First serve, Tip-off, Kick-off...) |
    | Season recap | 16:9 | Team montage with stats, final score and a send-off |
 
 2. Enter the player or team details, pick team colours and add your **team and opponent logos** (remembered for next time). Player reels take a **photo or short clip** of the player; turn on **Cut out** to remove a photo's background. Optionally enter the **match score**: set scores add the final scoreboard, and a score per play shows the score bug.
-3. Team reels and the starting lineup have a **Roster** step. Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
+3. Team reels and the lineups have a **Roster** step; the matchup lineup has a second one for the opponent (pick their colours on the team step). Paste a list (one player per line, like `12 Jordan Lee, Outside`) or add players one by one, with a photo or clip for each.
 4. Import game footage and press **Find highlights**. On-device analysis listens for referee whistles, measures how much louder the crowd gets after each point than during the rally, and tracks on-court motion. Pick plays, label them with the sport's plays (Kill, Three, Goal, Home run...) and credit them to players.
 5. Vertical and 4:5 reels **auto-follow the action**, panning wide game footage to keep the play in frame. Tap your player in a play to place a **spotlight** instead: the reel freezes, dims the surroundings and rings them, then **follows them through the play**. An on-device tracker (template matching on small colour frames, run forwards and backwards from your tap) keeps a marker with their number above them, and narrower reels pan with them.
 6. Choose a studio-recorded music track (each style recommends one), or **your own song** from your device (beat-cut reels find its beats and cut on them), and press **Build my reel**. Select any graphic in the editor to change its words and colours.

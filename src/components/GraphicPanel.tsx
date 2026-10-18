@@ -7,7 +7,9 @@ import { ColorField, gestureProps, Section, Toggle } from '../ui/controls';
 /** Labels for the text fields graphics use, in the order they're shown. */
 const FIELDS: [string, string][] = [
   ['kicker', 'Kicker'],
+  ['award', 'Award'],
   ['title', 'Title'],
+  ['week', 'Week'],
   ['first', 'First name'],
   ['last', 'Last name'],
   ['name', 'Name'],
@@ -17,8 +19,11 @@ const FIELDS: [string, string][] = [
   ['tag', 'Play'],
   ['usName', 'Our team'],
   ['us', 'Our score'],
+  ['usSub', 'Our line'],
   ['themName', 'Opponent'],
   ['them', 'Their score'],
+  ['themSub', 'Their line'],
+  ['score', 'Score'],
   ['set', 'Set'],
   ['result', 'Result'],
   ['sub', 'Lines'],
@@ -103,6 +108,12 @@ export function GraphicPanel({ clip }: { clip: Clip }) {
         <ColorField label="Primary" value={g.colors[0]} onChange={(v) => set({ colors: [v, g.colors[1]] })} />
         <ColorField label="Accent" value={g.colors[1]} onChange={(v) => set({ colors: [g.colors[0], v] })} />
       </Section>
+      {g.oppColors && (
+        <Section title="Opponent colours">
+          <ColorField label="Primary" value={g.oppColors[0]} onChange={(v) => set({ oppColors: [v, g.oppColors![1]] })} />
+          <ColorField label="Accent" value={g.oppColors[1]} onChange={(v) => set({ oppColors: [g.oppColors![0], v] })} />
+        </Section>
+      )}
       {g.type === 'playerCard' && g.media === 'image' && (
         <Section title="Photo">
           {g.depth && <Toggle label="Living photo (3D camera move)" checked={!g.still} onChange={(v) => set({ still: !v })} />}

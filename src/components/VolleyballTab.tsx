@@ -37,7 +37,7 @@ export function VolleyballTab() {
         </span>
         <span>
           <strong>Highlight reel</strong>
-          <small>Recruiting, hype, player spotlight, team, starting lineup or season recap. Titles, music and spotlights done for you.</small>
+          <small>Recruiting, hype, spotlight, Play of the Week, team, victory, lineups for one or both teams, or a season recap. Titles, music and spotlights done for you.</small>
         </span>
         <Icon name="chevronRight" />
       </button>
@@ -47,8 +47,11 @@ export function VolleyballTab() {
             ['recruiting', 'Recruiting'],
             ['hype', 'Hype'],
             ['spotlight', 'Spotlight'],
+            ['potw', 'Play of the Week'],
             ['team', 'Team'],
+            ['victory', 'Victory'],
             ['lineup', 'Lineup'],
+            ['matchup', 'Matchup'],
             ['recap', 'Recap'],
           ] as const
         ).map(([id, label]) => (

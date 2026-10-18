@@ -20,6 +20,12 @@ export function setLivePhotoReady(fn: () => void) {
   onReady = fn;
 }
 
+const loaded = (src: CanvasImageSource) => {
+  if (src instanceof HTMLImageElement && !(src.complete && src.naturalWidth)) return false;
+  const [w, h] = sizeOf(src);
+  return w > 0 && h > 0;
+};
+
 function sizeOf(src: CanvasImageSource): [number, number] {
   if (src instanceof HTMLImageElement) return [src.naturalWidth, src.naturalHeight];
   const s = src as { width: number; height: number };
@@ -58,7 +64,8 @@ async function build(photo: CanvasImageSource, depth: CanvasImageSource): Promis
 export function livePhotoLayers(key: string, photo: CanvasImageSource, depth: CanvasImageSource): Built | null {
   const hit = cache.get(key);
   if (hit && !(hit instanceof Promise)) return hit;
-  if (!hit) {
+  // A photo still loading has no pixels yet: building now would cache empty layers for good.
+  if (!hit && loaded(photo) && loaded(depth)) {
     const p = build(photo, depth).then((b) => {
       cache.set(key, b);
       onReady();

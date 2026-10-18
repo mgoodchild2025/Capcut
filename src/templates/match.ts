@@ -1,4 +1,4 @@
-import type { ReelInfo, ReelInput } from './reel';
+import { REEL_STYLES, type ReelInfo, type ReelInput } from './reel';
 import { upper } from './shared';
 
 /** Set scores that have both numbers filled in, as [ours, theirs]. */
@@ -11,7 +11,7 @@ export function playedSets(info: ReelInfo): [number, number][] {
 /** Short names for the score bug: the team (or the player's club) and the opponent. */
 export function sides(input: ReelInput, full = false): [string, string] {
   const { info } = input;
-  const team = input.style === 'team' || input.style === 'lineup' || input.style === 'recap' ? info.name : info.club || info.school;
+  const team = REEL_STYLES.find((s) => s.id === input.style)?.subject === 'team' ? info.name : info.club || info.school;
   // Long names lose whole trailing words ("ROCKETS 17 ELITE" -> "ROCKETS 17") so the bug stays compact.
   const short = (s: string, fallback: string) => {
     if (full) return upper(s || fallback);

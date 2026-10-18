@@ -42,7 +42,7 @@ export interface Track {
 
 export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'graphic';
 
-export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator';
+export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator' | 'versus' | 'victory' | 'potw' | 'badge';
 
 /** A telestrator drawing: points are fractions of the frame. Circles are [centre, edge]; arrows and lines [from, to]. */
 export interface TeleMark {
@@ -56,6 +56,8 @@ export interface GraphicSpec {
   type: GraphicType;
   /** Team colours: primary, accent. */
   colors: [string, string];
+  /** The opponent's colours, for graphics that show both teams (the versus title). */
+  oppColors?: [string, string];
   /** Named text fields (title, kicker, sub, name, number, position, ...), depending on the type. */
   text: Record<string, string>;
   /** Asset ids of the team's and the opponent's logos. */

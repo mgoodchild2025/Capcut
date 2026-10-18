@@ -461,7 +461,7 @@ function PlaybackStats() {
       `Project: ${project.settings.width}x${project.settings.height} ${project.settings.fps}fps, ${project.clips.length} clips, ${projectDuration(project).toFixed(1)}s`,
       `Video: ${media.join('; ') || 'none'}`,
       `Frames: ${s.frames} at ${s.fps.toFixed(1)} fps, ${s.slow} slow (>50ms), worst ${Math.round(s.worst)}ms`,
-      `Seeks ${s.seeks}, starts ${s.restarts}, waiting ${(s.stallMs / 1000).toFixed(1)}s`,
+      `Seeks ${s.seeks} (start ${s.seekWhy.start}, video ${s.seekWhy.lead}, audio ${s.seekWhy.audio}, other ${s.seekWhy.other}), starts ${s.restarts}, waiting ${(s.stallMs / 1000).toFixed(1)}s`,
       `Video frames: ${s.dropped ?? '?'} dropped of ${s.decoded ?? '?'}, players ${s.players}, direct ${s.direct ? 'on' : 'off'}`,
     ];
     return lines.join('\n');

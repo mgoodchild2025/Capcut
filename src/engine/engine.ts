@@ -15,7 +15,12 @@ interface MediaEntry {
   wrap?: HTMLDivElement;
 }
 
-const blankStats = () => ({ frames: 0, ms: 0, slow: 0, worst: 0, seeks: 0, restarts: 0, stallMs: 0 });
+const blankStats = () => ({ frames: 0, ms: 0, slow: 0, worst: 0, seeks: 0, seekWhy: { start: 0, lead: 0, audio: 0, other: 0 }, restarts: 0, stallMs: 0 });
+
+/** Sets a media element's rate, skipping changes under 3% (each change costs phones a stutter). */
+function setRate(el: HTMLMediaElement, rate: number) {
+  if (Math.abs(el.playbackRate - rate) > 0.03 * rate) el.playbackRate = rate;
+}
 
 /** How long the clock may wait for the leading video to start or catch up before running on regardless. */
 const MAX_STALL_MS = 1200;
@@ -258,9 +263,10 @@ class Engine {
     return entry;
   }
 
-  /** Moves a playing element to `t`, counting it: seeks are what make phones stutter. */
-  private seekEl(el: HTMLMediaElement, t: number) {
+  /** Moves a playing element to `t`, counting it (and why): seeks are what make phones stutter. */
+  private seekEl(el: HTMLMediaElement, t: number, why: 'start' | 'lead' | 'audio' | 'other') {
     this.stats.seeks++;
+    this.stats.seekWhy[why]++;
     el.currentTime = t;
   }
 
@@ -478,12 +484,14 @@ class Engine {
       const running = playing && rawRate > 0 && layer.sourceTime < end;
       if (running) {
         const rate = clamp(rawRate, 0.0625, 16);
-        if (Math.abs(el.playbackRate - rate) > 0.01) el.playbackRate = rate;
+        // Speed ramps change the rate every frame; phones stutter on each change, so only pass on
+        // changes of a few percent (followers below fine-tune their own rate).
         // The first playing video leads: the clock follows it, rather than the video being forced
         // to follow the clock. Seeking a video that has fallen behind makes it stall and fall
         // further behind, which is what made playback stutter on phones.
         const leads = !led && clip.kind === 'video' && layer.transition?.role !== 'out';
         if (leads) led = true;
+        if (leads || el.paused) setRate(el, rate);
         if (el.paused) {
           const off = target - el.currentTime;
           if (leads && Math.abs(off) < 0.5 * rate) {
@@ -491,7 +499,8 @@ class Engine {
             // rather than seeking it, since a seek stalls the start on phones.
             this.holdClock(t - off / rate, dtMs);
           } else {
-            if (Math.abs(off) > 0.05) this.seekEl(el, target);
+            // A follower a little off just starts where it is; the nudge below closes the gap.
+            if (Math.abs(off) > (leads ? 0.05 : 0.25 * Math.max(1, rate))) this.seekEl(el, target, 'start');
             if (leads) this.holdClock(t, dtMs);
           }
           // Paused stays true until it actually starts, so count each start once.
@@ -502,7 +511,7 @@ class Engine {
         } else if (leads) {
           const drift = el.currentTime - target;
           if (Math.abs(drift) > 1.5 * Math.max(1, rate)) {
-            this.seekEl(el, target);
+            this.seekEl(el, target, 'lead');
           } else if (el.seeking) {
             this.holdClock(t, dtMs);
           } else {
@@ -510,8 +519,22 @@ class Engine {
             // Ease the clock toward the video so the timeline never jumps.
             if (Math.abs(drift) > 0.03) this.clockStartTime += (drift / rate) * 0.2;
           }
-        } else if (Math.abs(el.currentTime - target) > 0.25 * Math.max(1, rate)) {
-          this.seekEl(el, target);
+        } else {
+          // Followers (music, sound effects, an outgoing transition clip) are eased back into step
+          // by playing a little faster or slower: a seek is an audible skip or a visible hitch on
+          // phones. Only a big drift (a stall, a scrub) is fixed with a seek.
+          const drift = el.currentTime - target;
+          if (Math.abs(drift) > Math.max(1, rate)) {
+            this.seekEl(el, target, clip.kind === 'audio' ? 'audio' : 'other');
+            setRate(el, rate);
+          } else {
+            // In 2% steps, so the rate changes only now and then rather than every frame.
+            const nudge = Math.round(clamp(-drift * 0.8, -0.08, 0.08) / 0.02) * 0.02;
+            // Steady-speed sound keeps its pitch while nudged.
+            if (clip.kind === 'audio' && clip.speed === 1 && !clip.curve) el.preservesPitch = true;
+            const want = rate * (1 + nudge);
+            if (Math.abs(el.playbackRate - want) > 0.001 * rate) el.playbackRate = want;
+          }
         }
       } else {
         if (!el.paused) el.pause();

@@ -195,8 +195,12 @@ export interface RenderOptions {
    * being copied onto the canvas, which is slow on phones. Its placement is reported, not drawn,
    * and the background is left transparent.
    */
-  direct?: { clipId: string; place: (p: DirectPlacement) => void };
+  direct?: { clipIds: string[]; place: (clipId: string, p: DirectPlacement, order: number) => void };
+  /** Lighter drawing for smooth playback on phones (no soft shadows). Never for export. */
+  lite?: boolean;
 }
+
+let lite = false;
 
 /**
  * Composites the project at time `t` onto `ctx`. The context's canvas may be any size;
@@ -204,6 +208,7 @@ export interface RenderOptions {
  */
 export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: number, opts: RenderOptions): DrawBox[] {
   const { width: W, height: H, background } = project.settings;
+  lite = !!opts.lite;
   const cw = ctx.canvas.width;
   const ch = ctx.canvas.height;
   const pxScale = cw / W;
@@ -219,6 +224,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
   }
 
   const boxes: DrawBox[] = [];
+  let directOrder = 0;
   for (const layer of activeLayers(project, t)) {
     const { clip, track } = layer;
     if (track.hidden || track.kind === 'audio' || clip.kind === 'audio') continue;
@@ -273,11 +279,12 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         w = iw * fit * scale;
         h = ih * fit * scale;
         const spot = clip.spotlight && clip.hold ? spotlightState(clip, layer.local) : null;
-        if (opts.direct?.clipId === clip.id) {
-          opts.direct.place({ clip, cx, cy, w, h, rotation, alpha, extraBlur: m.blur });
-          // The page shows the video; the canvas above it still carries the marker.
+        if (opts.direct?.clipIds.includes(clip.id)) {
+          opts.direct.place(clip.id, { clip, cx, cy, w, h, rotation, alpha, extraBlur: m.blur }, ++directOrder);
+          // The page shows the video; the canvas above it still carries the marker and any flash.
           if (clip.follow) drawFollow(ctx, clip, layer.local, layer.sourceTime, w, h, Math.min(W, H));
           ctx.restore();
+          flash();
           boxes.push({ clipId: clip.id, cx, cy, w, h, rotation });
           continue;
         }
@@ -313,7 +320,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
       // Graphics draw in project coordinates; the clip's transform moves and scales the whole thing.
       ctx.scale(scale, scale);
       ctx.translate(-W / 2, -H / 2);
-      drawGraphic(ctx, clip, layer.local, W, H, (id) => opts.getImage?.(id) ?? null, opts.getSource(clip));
+      drawGraphic(ctx, clip, layer.local, W, H, (id) => opts.getImage?.(id) ?? null, opts.getSource(clip), lite);
       w = W * scale;
       h = H * scale;
     } else if (clip.kind === 'text' && clip.text) {
@@ -377,7 +384,7 @@ function drawFollow(ctx: CanvasRenderingContext2D, clip: Clip, local: number, so
   ctx.globalAlpha *= easeOutCubic(fade);
   ctx.fillStyle = f.color;
   ctx.shadowColor = 'rgba(0,0,0,0.55)';
-  ctx.shadowBlur = size * 0.5;
+  ctx.shadowBlur = lite ? 0 : size * 0.5;
   ctx.beginPath();
   ctx.moveTo(px, tip);
   ctx.lineTo(px - size * 0.55, tip - size * 0.85);
@@ -437,7 +444,7 @@ function drawSpotlight(ctx: CanvasRenderingContext2D, clip: Clip, s: SpotState, 
   ctx.lineWidth = lw;
   ctx.strokeStyle = sp.color;
   ctx.shadowColor = sp.color;
-  ctx.shadowBlur = lw * 3;
+  ctx.shadowBlur = lite ? 0 : lw * 3;
   ctx.stroke();
   ctx.shadowBlur = 0;
   // Pointer arrow and label above the ring.
@@ -507,7 +514,7 @@ function drawText(
   const paint = (text: string, x: number, y: number, color: string) => {
     if (t.shadow) {
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
-      ctx.shadowBlur = size * 0.18;
+      ctx.shadowBlur = lite ? 0 : size * 0.18;
       ctx.shadowOffsetY = size * 0.05;
     }
     if (t.strokeWidth > 0) {

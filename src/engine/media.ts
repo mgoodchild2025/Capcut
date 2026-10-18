@@ -222,7 +222,7 @@ export async function importFile(file: Blob & { name?: string }, id = uid('a_'),
   }
 }
 
-export async function buildFilmstrip(asset: Asset): Promise<string[]> {
+export async function buildFilmstrip(asset: Asset, gate: () => Promise<void> = async () => {}): Promise<string[]> {
   if (asset.kind === 'image') return asset.thumbnail ? [asset.thumbnail] : [];
   if (asset.kind !== 'video') return [];
   const count = Math.max(1, Math.min(MAX_FILMSTRIP_FRAMES, Math.ceil(asset.duration)));
@@ -233,8 +233,14 @@ export async function buildFilmstrip(asset: Asset): Promise<string[]> {
   if (d) {
     try {
       const frames: string[] = [];
-      for await (const frame of d.sink.canvasesAtTimestamps(times.map((t) => d.first + t))) {
-        if (frame) frames.push(canvasToJpeg(frame.canvas, 0.6));
+      // A few frames at a time: the decoder works ahead within a batch, so waiting between
+      // batches is what actually stops it while something more important (playback) runs.
+      for (let i = 0; i < times.length; i += 4) {
+        await gate();
+        for await (const frame of d.sink.canvasesAtTimestamps(times.slice(i, i + 4).map((t) => d.first + t))) {
+          if (frame) frames.push(canvasToJpeg(frame.canvas, 0.6));
+        }
+        await new Promise((r) => setTimeout(r, 0));
       }
       if (frames.length) return frames;
     } catch (e) {
@@ -250,6 +256,7 @@ export async function buildFilmstrip(asset: Asset): Promise<string[]> {
     await primeFrames(v);
     const frames: string[] = [];
     for (const t of times) {
+      await gate();
       await seekTo(v, t);
       frames.push(drawThumb(v, v.videoWidth, v.videoHeight, FILMSTRIP_HEIGHT, 0.6));
     }

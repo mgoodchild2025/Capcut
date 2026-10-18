@@ -92,6 +92,9 @@ let LOOK: GraphicLook = 'broadcast';
 let HEAD = DISPLAY;
 /** How much plates lean (classic is square). */
 let SKEW = 1;
+/** Lighter drawing for smooth playback on phones: no soft shadows or light sweeps. Exports never use it. */
+let LITE = false;
+const soft = (blur: number) => (LITE ? 0 : blur);
 
 function font(ctx: CanvasRenderingContext2D, size: number, weight = 900, family = HEAD) {
   // The classic look's sans is set a notch lighter than the display face.
@@ -174,10 +177,10 @@ function headline(
     if (LOOK === 'neon') {
       // Neon tubes: a coloured glow around bright lettering.
       ctx.shadowColor = rgba(g.c2, 0.95);
-      ctx.shadowBlur = size * 0.28;
+      ctx.shadowBlur = soft(size * 0.28);
     } else {
       ctx.shadowColor = 'rgba(0,0,0,0.45)';
-      ctx.shadowBlur = size * 0.12;
+      ctx.shadowBlur = soft(size * 0.12);
       ctx.shadowOffsetY = size * 0.04;
     }
   }
@@ -207,7 +210,7 @@ function headline(
   }
   ctx.restore();
   const sheen = opts.sheen;
-  if (sheen !== undefined && sheen > 0 && sheen < 1) {
+  if (sheen !== undefined && sheen > 0 && sheen < 1 && !LITE) {
     // Light only where the letters are: draw them into a scratch canvas, sweep a band through.
     const pad = size * 0.3;
     const sw = w + pad * 2;
@@ -291,7 +294,7 @@ function neonBackdrop(g: G) {
   ctx.save();
   ctx.strokeStyle = rgba(c2, 0.55);
   ctx.shadowColor = rgba(c2, 0.9);
-  ctx.shadowBlur = S * 0.012;
+  ctx.shadowBlur = soft(S * 0.012);
   ctx.lineWidth = Math.max(1, S * 0.0025);
   // Floor lines fanning out from the vanishing point.
   for (let i = -12; i <= 12; i++) {
@@ -313,7 +316,7 @@ function neonBackdrop(g: G) {
   ctx.restore();
   ctx.fillStyle = c2;
   ctx.shadowColor = c2;
-  ctx.shadowBlur = S * 0.04;
+  ctx.shadowBlur = soft(S * 0.04);
   ctx.fillRect(0, horizon - 1, W, Math.max(2, S * 0.003));
   ctx.shadowBlur = 0;
   ctx.fillStyle = 'rgba(255,255,255,0.025)';
@@ -494,7 +497,7 @@ function logoAt(g: G, id: string | undefined, cx: number, cy: number, size: numb
   ctx.globalAlpha *= alpha;
   if (glow > 0) {
     ctx.shadowColor = rgba(g.c2, 0.8 * glow);
-    ctx.shadowBlur = size * 0.25 * glow;
+    ctx.shadowBlur = soft(size * 0.25 * glow);
   }
   ctx.drawImage(src, cx - (iw * k) / 2, cy - (ih * k) / 2, iw * k, ih * k);
   ctx.restore();
@@ -807,7 +810,7 @@ function drawScoreBug(g: G) {
   ctx.save();
   ctx.globalAlpha *= 1 - out;
   ctx.shadowColor = 'rgba(0,0,0,0.45)';
-  ctx.shadowBlur = rowH * 0.5;
+  ctx.shadowBlur = soft(rowH * 0.5);
   ctx.fillStyle = 'rgba(10,11,16,0.9)';
   ctx.fillRect(x, y, w, h);
   ctx.shadowBlur = 0;
@@ -896,7 +899,7 @@ function drawPlayerCard(g: G) {
     ctx.save();
     ctx.globalAlpha = eOut(seg(t, 0.1, 0.5));
     ctx.shadowColor = rgba(g.c2, 0.9);
-    ctx.shadowBlur = S * 0.05;
+    ctx.shadowBlur = soft(S * 0.05);
     ctx.drawImage(media, cx - dw / 2, bottom - dh + rise, dw, dh);
     ctx.restore();
   } else if (open > 0) {
@@ -1500,7 +1503,7 @@ function drawTelestrator(g: G) {
       ctx.lineWidth = width;
       ctx.strokeStyle = color;
       ctx.shadowColor = m.color;
-      ctx.shadowBlur = blur;
+      ctx.shadowBlur = soft(blur);
       ctx.beginPath();
       ctx.moveTo(path[0][0], path[0][1]);
       for (let k = 1; k < path.length; k++) ctx.lineTo(path[k][0], path[k][1]);
@@ -1514,7 +1517,7 @@ function drawTelestrator(g: G) {
       const [bx, by] = path[path.length - 1];
       const ang = Math.atan2(by - ay, bx - ax);
       const hs = lw * 4.2 * eBack(seg(p, 0.85, 1));
-      ctx.shadowBlur = lw * 1.5;
+      ctx.shadowBlur = soft(lw * 1.5);
       ctx.shadowColor = m.color;
       ctx.fillStyle = m.color;
       ctx.beginPath();
@@ -1546,7 +1549,7 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
 export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
-export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null) {
+export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {
   const spec = clip.graphic;
   if (!spec) return;
   const look = spec.look ?? 'broadcast';
@@ -1582,6 +1585,7 @@ export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: nu
   LOOK = look;
   HEAD = look === 'classic' ? SANS : DISPLAY;
   SKEW = look === 'classic' ? 0 : 1;
+  LITE = lite;
   ctx.save();
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
@@ -1592,5 +1596,6 @@ export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: nu
     LOOK = 'broadcast';
     HEAD = DISPLAY;
     SKEW = 1;
+    LITE = false;
   }
 }

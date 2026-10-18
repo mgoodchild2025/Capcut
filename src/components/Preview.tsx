@@ -56,16 +56,32 @@ export function Preview() {
     return () => ro.disconnect();
   }, [settings.width, settings.height]);
 
+  // Phones draw the overlay canvas at 1x while playing (a quarter of the pixels at 2x), sharp again on pause.
+  const lowRes = useEditor((s) => s.playing) && engine.directVideo;
+  const sizeCanvas = (c: HTMLCanvasElement, low: boolean) => {
+    const dpr = low ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+    const scale = Math.min(dpr, settings.width / size.w);
+    const w = Math.round(size.w * Math.max(1, scale));
+    const h = Math.round(size.h * Math.max(1, scale));
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+      engine.invalidate();
+    }
+  };
   useEffect(() => {
     const c = canvasRef.current;
     if (!c || size.w === 0) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const scale = Math.min(dpr, settings.width / size.w);
-    c.width = Math.round(size.w * Math.max(1, scale));
-    c.height = Math.round(size.h * Math.max(1, scale));
+    sizeCanvas(c, engine.directVideo && useEditor.getState().playing);
     engine.setPreviewCanvas(c);
     return () => engine.setPreviewCanvas(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size, settings.width]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (c && size.w > 0) sizeCanvas(c, lowRes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lowRes]);
 
   useEffect(
     () =>

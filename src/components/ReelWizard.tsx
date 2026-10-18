@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildReelFromWizard, findHighlightsIn, importFiles, stopPreviewSound, togglePreviewSound } from '../actions';
 import { highlightKey, useHighlights } from '../ai/highlightState';
-import { LIBRARY_MUSIC } from '../audio/library';
+import { LIBRARY_MUSIC, type MusicGenre } from '../audio/library';
+import { GenreChips } from './AudioTab';
 import { MUSIC, trackLength } from '../audio/synth';
 import { drawGraphic } from '../engine/graphics';
 import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
@@ -1270,7 +1271,10 @@ function PlayerReelsOption({ clips, roster, value, onChange }: { clips: WClip[];
 
 function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; setMusicId: (id: string | null) => void; style: ReelStyle }) {
   const [playing, setPlaying] = useState<string | null>(null);
+  const [genre, setGenre] = useState<MusicGenre | null>(null);
   const recommended = REEL_STYLES.find((s) => s.id === style)!.music;
+  // The recommended track leads; a picked track stays visible whatever the filter.
+  const tracks = [...LIBRARY_MUSIC].sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended)).filter((m) => !genre || m.genre === genre || m.id === musicId);
   useEffect(() => stopPreviewSound, []);
   const pick = (id: string, title: string, sub: string, colors: [string, string]) => (
     <div key={id} className={`music-pick ${musicId === id ? 'on' : ''}`}>
@@ -1295,8 +1299,9 @@ function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; set
     <section className="wiz-step">
       <h3 className="wiz-title">Set the tempo</h3>
       <p className="wiz-lede">{['hype', 'team', 'lineup', 'victory', 'matchup'].includes(style) ? 'Cuts lock to the beat of the track you pick. ' : ''}Studio recordings, free to post anywhere.</p>
+      <GenreChips value={genre} onChange={setGenre} />
       <div className="music-picks">
-        {LIBRARY_MUSIC.map((m) => pick(m.id, m.title, `${m.mood} · ${m.bpm} BPM · ${m.artist}`, m.colors))}
+        {tracks.map((m) => pick(m.id, m.title, `${m.mood} · ${m.bpm} BPM · ${m.artist}`, m.colors))}
         <button className={`music-none ${musicId === null ? 'on' : ''}`} onClick={() => setMusicId(null)}>
           No music
         </button>

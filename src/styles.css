@@ -3751,6 +3751,19 @@ input[type='range']::-moz-range-thumb {
   outline-offset: 2px;
 }
 
+.genre-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.genre-chips small {
+  margin-left: 3px;
+  opacity: 0.6;
+  font-weight: 600;
+}
+
 .music-picks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));

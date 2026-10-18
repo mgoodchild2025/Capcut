@@ -69,7 +69,7 @@ In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw**
 - **Text**: templates, fonts, stroke, background and shadow, plus emoji stickers.
 - **Automatic captions**: on-device Whisper, in Classic, Boxed, Karaoke or Pop styles with word highlighting.
 - **Audio**:
-  - Eight studio-recorded music tracks and recorded sound effects (whoosh, slam, crowd cheer, hit, boom, swish), all public domain (CC0), plus five generated tracks and twelve generated effects. Reels add the crowd under the final score, and start the song on a beat so every cut lands on the music.
+  - Seventeen studio-recorded music tracks (electronic, rock, cinematic, hip-hop and funk, with a style filter) and recorded sound effects (whoosh, slam, crowd cheer, hit, boom, swish), all public domain (CC0), plus five generated tracks and twelve generated effects. Reels add the crowd under the final score, and start the song on a beat so every cut lands on the music.
   - Voiceover recording and AI text-to-speech.
   - Beat detection with bar markers, and **Sync cuts to the beat**.
 - **Export**: 480p to 4K, 24 to 60 fps, MP4. Frame by frame with WebCodecs, usually faster than real time and fine in a background tab. Falls back to real-time recording where WebCodecs is missing. On phones, **Save to Photos** / **Share** hands the video to the share sheet.
@@ -138,7 +138,15 @@ Every bundled recording is dedicated to the public domain (CC0) by its creator, 
 | Doomed, Warped, Great Mission | Alexander Ehlers | [OpenGameArt](https://opengameart.org/content/free-music-pack) |
 | Determined Pursuit | Emma_MA | [OpenGameArt](https://opengameart.org/content/determined-pursuit-epic-orchestra-loop) |
 | Rhythm Factory | Zane Little Music | [OpenGameArt](https://opengameart.org/content/rhythm-factory) |
-| Funked Up | Joth | [OpenGameArt](https://opengameart.org/content/funked-up) |
+| Funked Up, Black Diamond | Joth | [OpenGameArt](https://opengameart.org/content/funked-up), [OpenGameArt](https://opengameart.org/content/black-diamond) |
+| Twists | Alexander Ehlers | [OpenGameArt](https://opengameart.org/content/free-music-pack) |
+| Megasong | Emma_MA | [OpenGameArt](https://opengameart.org/content/megasong) |
+| Let the Games Begin | section31 | [OpenGameArt](https://opengameart.org/content/let-the-games-begin-0) |
+| Fever Stadium | MintoDog | [OpenGameArt](https://opengameart.org/content/fever-stadium) |
+| Technomania | Fupi | [OpenGameArt](https://opengameart.org/content/technomania101-2000s-europop-electronic-dance-music) |
+| Final Hour | isaiah658 | [OpenGameArt](https://opengameart.org/content/final-hour) |
+| The Rush | tebruno99 | [OpenGameArt](https://opengameart.org/content/the-rush) |
+| Try Me | iamoneabe | [OpenGameArt](https://opengameart.org/content/try-me) |
 | Whoosh | bosslevelaudio | [OpenGameArt](https://opengameart.org/content/wierd-whooshes) |
 | Slam, Hit, Boom | Kenney | [Impact Sounds](https://kenney.nl/assets/impact-sounds), [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
 | Crowd cheer | eXpl0it3r | [OpenGameArt](https://opengameart.org/content/applause-in-a-large-hall-or-church) |

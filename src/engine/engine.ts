@@ -477,11 +477,16 @@ class Engine {
       const entry = this.mediaFor(clip, asset, layer.sourceTime);
       live.add(clip.id);
       const el = entry.el;
-      const end = Math.max(0, asset.duration - 0.01);
+      // The browser's own idea of the length wins: iPhones measure some files (MP3s) a little
+      // shorter than they were measured on import, and a sound that has ended must stay ended.
+      // Telling it to play again would restart it from the top, an audible repeat.
+      const length = Number.isFinite(el.duration) && el.duration > 0 ? Math.min(asset.duration, el.duration) : asset.duration;
+      const end = Math.max(0, length - 0.01);
       const target = clamp(layer.sourceTime, 0, end);
       // Outgoing transition clips keep playing into their handles; holds and exhausted media freeze.
       const rawRate = rateAt(clip, layer.local);
-      const running = playing && rawRate > 0 && layer.sourceTime < end;
+      const finished = el.ended && layer.sourceTime >= end - 0.25;
+      const running = playing && rawRate > 0 && layer.sourceTime < end && !finished;
       if (running) {
         const rate = clamp(rawRate, 0.0625, 16);
         // Speed ramps change the rate every frame; phones stutter on each change, so only pass on
@@ -538,7 +543,7 @@ class Engine {
         }
       } else {
         if (!el.paused) el.pause();
-        if (!el.seeking && Math.abs(el.currentTime - target) > 0.5 / fps) el.currentTime = target;
+        if (!finished && !el.seeking && Math.abs(el.currentTime - target) > 0.5 / fps) el.currentTime = target;
       }
 
       let gain = running && !track.muted ? clipGain(clip, Math.min(layer.local, clip.duration)) : 0;

@@ -181,6 +181,8 @@ export interface DirectPlacement {
   w: number;
   h: number;
   rotation: number;
+  /** Overall scale included in `w` and `h` (the clip's and its animation's). */
+  scale: number;
   alpha: number;
   /** Blur from animations, added to the clip's own filter. */
   extraBlur: number;
@@ -280,7 +282,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, project: Project, t: 
         h = ih * fit * scale;
         const spot = clip.spotlight && clip.hold ? spotlightState(clip, layer.local) : null;
         if (opts.direct?.clipIds.includes(clip.id)) {
-          opts.direct.place(clip.id, { clip, cx, cy, w, h, rotation, alpha, extraBlur: m.blur }, ++directOrder);
+          opts.direct.place(clip.id, { clip, cx, cy, w, h, rotation, scale, alpha, extraBlur: m.blur }, ++directOrder);
           // The page shows the video; the canvas above it still carries the marker and any flash.
           if (clip.follow) drawFollow(ctx, clip, layer.local, layer.sourceTime, w, h, Math.min(W, H));
           ctx.restore();

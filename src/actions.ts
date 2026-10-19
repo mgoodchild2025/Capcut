@@ -1149,8 +1149,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     commit({ ...built, id: current.id, createdAt: current.createdAt });
     if (w.playerReels && style.roster === 'credits') madePlayerReels = await savePlayerReels(input, w.playerReels);
     engine.pause();
-    // Land on the finished title rather than its first, still-animating frame.
-    engine.seek(2.2);
+    // Start at the top, so Play runs the reel from its first frame.
+    engine.seek(0);
     select(null);
     return true;
   });

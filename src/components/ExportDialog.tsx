@@ -40,6 +40,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   }, [phase]);
 
   const start = async () => {
+    // A newer release is out: move to it first (the project is saved and reopened).
+    if (useEditor.getState().updateReady && (await reloadForUpdate(true))) return;
     const ac = new AbortController();
     abort.current = ac;
     const onProgress = (progress: number) =>
@@ -51,10 +53,19 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         setPhase({ kind: 'rendering', progress: 0, fast: true });
         engine.pause();
         const { project: p, assets } = useEditor.getState();
+        // Loaded on demand: the encoder library is larger than the rest of the app.
+        let mod: typeof import('../engine/exportFast') | null = null;
         try {
-          // Loaded on demand: the encoder library is larger than the rest of the app.
-          const { exportFast } = await import('../engine/exportFast');
-          result = await exportFast(p, assets, opts);
+          mod = await import('../engine/exportFast');
+        } catch (err) {
+          if (!isStaleBuild(err)) throw err;
+          // A release went out while the app was open: reload into it (the project is saved first).
+          if (await reloadForUpdate()) return;
+          // Just reloaded and still missing: the real-time export needs nothing more to load.
+          console.warn('Fast export unavailable, exporting in real time:', (err as Error).message);
+        }
+        try {
+          if (mod) result = await mod.exportFast(p, assets, opts);
         } catch (err) {
           if ((err as Error).name !== 'FastExportUnsupported') throw err;
           console.warn('Falling back to real-time export:', (err as Error).message);
@@ -68,8 +79,6 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       setPhase({ kind: 'done', url: URL.createObjectURL(result.blob), blob: result.blob, size: result.blob.size, ext: outExt });
     } catch (err) {
       if ((err as Error).name === 'AbortError') setPhase({ kind: 'setup' });
-      // A release went out while the app was open: reload into it (the project is saved first).
-      else if (isStaleBuild(err) && (await reloadForUpdate())) setPhase({ kind: 'rendering', progress: 0, fast: true });
       else setPhase({ kind: 'error', message: isStaleBuild(err) ? 'ClipForge was updated while it was open. Close and reopen the app, then export again.' : (err as Error).message });
     }
   };

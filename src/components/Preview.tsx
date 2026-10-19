@@ -552,7 +552,7 @@ function Transport() {
     <div className="transport">
       <span className="tc" onPointerDown={holdStart} onPointerUp={holdEnd} onPointerLeave={holdEnd} onPointerCancel={holdEnd} onContextMenu={(e) => e.preventDefault()}>
         <Timecode fps={fps} />
-        <span> / {formatTimecode(dur, fps)}</span>
+        <span className="tc-total"> / {formatTimecode(dur, fps)}</span>
       </span>
       <div className="transport-mid">
         <button className="icon-btn" title="Back to start (Home)" aria-label="Back to start" onClick={() => engine.seek(0)} disabled={dur === 0}>
@@ -566,6 +566,9 @@ function Transport() {
         </button>
         <button className="icon-btn" title="Next frame (Right)" onClick={() => engine.stepFrames(1)}>
           <Icon name="stepFwd" size={16} />
+        </button>
+        <button className="icon-btn" title="Skip to end (End)" aria-label="Skip to end" onClick={() => engine.seek(dur)} disabled={dur === 0}>
+          <Icon name="toEnd" size={16} />
         </button>
       </div>
       <button

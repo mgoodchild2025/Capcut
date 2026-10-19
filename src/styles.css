@@ -4385,6 +4385,13 @@ input[type='range']::-moz-range-thumb {
   width: 32px;
 }
 
+/* The smallest phones keep every control on one line by dropping the total length. */
+@media (max-width: 360px) {
+  .m-workspace .tc-total {
+    display: none;
+  }
+}
+
 .m-workspace .timeline {
   flex: 1 1 48%;
   min-height: 190px;

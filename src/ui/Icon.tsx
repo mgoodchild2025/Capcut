@@ -32,6 +32,7 @@ const PATHS: Record<string, string> = {
   fullscreen: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
   stepBack: 'M18 6v12L9 12zM6 6v12',
   toStart: 'M4 6h2.4v12H4zM14 6v12L7 12zM21 6v12l-7-6z',
+  toEnd: 'M20 6h-2.4v12H20zM10 6v12l7-6zM3 6v12l7-6z',
   stepFwd: 'M6 6v12l9-6zM18 6v12',
   fit: 'M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4',
   check: 'M5 12l5 5 9-10',
@@ -65,7 +66,7 @@ const PATHS: Record<string, string> = {
 };
 
 export function Icon({ name, size = 18, className, fill }: { name: string; size?: number; className?: string; fill?: boolean }) {
-  const solid = fill ?? (name === 'play' || name === 'pause' || name === 'stepBack' || name === 'stepFwd' || name === 'toStart');
+  const solid = fill ?? (name === 'play' || name === 'pause' || name === 'stepBack' || name === 'stepFwd' || name === 'toStart' || name === 'toEnd');
   return (
     <svg
       className={className}

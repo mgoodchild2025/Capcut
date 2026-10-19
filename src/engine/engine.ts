@@ -1,6 +1,6 @@
 import { activeLayers, projectDuration, upcomingClips } from '../model/ops';
 import { clipGain, rateAt, sourceTimeAt } from '../model/timing';
-import type { Asset, Clip } from '../model/types';
+import type { Asset, Clip, Project } from '../model/types';
 import { useEditor } from '../store';
 import { clamp } from '../utils';
 import { setLivePhotoReady } from './livePhoto';
@@ -62,6 +62,14 @@ export interface ExportOptions {
  * Owns playback: the clock, one media element per clip, the Web Audio graph and the
  * render loop that composites into the preview (and, while exporting, the export canvas).
  */
+/** The cover moment of a project, if it has one that can be drawn without seeking any video. */
+function posterOf(project: Project): number | null {
+  const t = project.poster;
+  if (t === undefined || t <= 0) return null;
+  const busy = project.clips.some((c) => c.start <= t && t < c.start + c.duration && (c.kind === 'video' || (c.kind === 'graphic' && c.graphic?.media === 'video')));
+  return busy ? null : t;
+}
+
 class Engine {
   private media = new Map<string, MediaEntry>();
   private images = new Map<string, HTMLImageElement>();
@@ -699,14 +707,16 @@ class Engine {
     const end = projectDuration(project);
     const shown = !this.exportCtx && end > 0 && t >= end ? Math.max(0, end - 0.5 / project.settings.fps) : t;
     this.sync(shown, playing, dtMs);
+    // Waiting at the start, a reel shows its cover (the finished title) instead of its blank first frame.
+    const cover = !playing && !this.exportCtx && shown === 0 ? posterOf(project) : null;
     if (!playing && !this.exportCtx && this.dirtyFrames <= 0) return;
     this.dirtyFrames--;
     if (this.preview) {
       const ctx = this.preview.getContext('2d');
-      const direct = this.directLayers(shown);
+      const direct = cover === null ? this.directLayers(shown) : [];
       this.placedNow.clear();
       if (ctx) {
-        this.boxes = renderFrame(ctx, project, shown, {
+        this.boxes = renderFrame(ctx, project, cover ?? shown, {
           getSource: this.getSource,
           getImage: this.getImage,
           // Phones draw a lighter preview while playing; pausing shows full quality again.

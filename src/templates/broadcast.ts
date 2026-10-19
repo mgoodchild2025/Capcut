@@ -201,7 +201,10 @@ export function buildBroadcastReel(raw: ReelInput, assets: Record<string, Asset>
   // ---------- open ----------
   const opening = titleGraphic(input.style, info);
   const openLen = opening.type === 'open' ? (input.style === 'hype' ? 3.2 : 4) : 4.6;
-  full(opening.type, opening.text, fit(openLen), { ...(opening.versus ? {} : { oppLogo: undefined }), ...(opening.oppColors ? { oppColors: opening.oppColors } : {}) }, opening.text.title || GRAPHIC_NAMES[opening.type]);
+  const openDur = fit(openLen);
+  // The cover: the title once it has finished building, before it wipes away.
+  p.poster = +Math.min(openDur - 0.6, opening.type === 'open' ? 2.4 : 2.6).toFixed(2);
+  full(opening.type, opening.text, openDur, { ...(opening.versus ? {} : { oppLogo: undefined }), ...(opening.oppColors ? { oppColors: opening.oppColors } : {}) }, opening.text.title || GRAPHIC_NAMES[opening.type]);
 
   // ---------- featured player card (player styles, when there's a photo or clip) ----------
   const [first, last] = splitName(name);

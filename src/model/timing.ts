@@ -3,7 +3,8 @@ import type { Clip, Keyframe, KeyProp, SpeedPoint, Transform } from './types';
 /** Speed-curve presets in the spirit of CapCut's curve speeds. Multipliers apply on top of the clip speed. */
 export const CURVE_PRESETS: { id: string; label: string; hint: string; points: SpeedPoint[] }[] = [
   { id: 'montage', label: 'Montage', hint: 'Fast, slow, fast', points: [{ p: 0, s: 2 }, { p: 0.35, s: 2 }, { p: 0.45, s: 0.5 }, { p: 0.6, s: 0.5 }, { p: 0.7, s: 2 }, { p: 1, s: 2 }] },
-  { id: 'hero', label: 'Hero', hint: 'Slow-mo in the middle', points: [{ p: 0, s: 1.5 }, { p: 0.4, s: 1.2 }, { p: 0.5, s: 0.3 }, { p: 0.62, s: 0.3 }, { p: 0.75, s: 1.2 }, { p: 1, s: 1.5 }] },
+  // Real speed either side, so the action never looks sped up; just the moment slows right down.
+  { id: 'hero', label: 'Hero', hint: 'Slow-mo in the middle', points: [{ p: 0, s: 1 }, { p: 0.4, s: 1 }, { p: 0.5, s: 0.3 }, { p: 0.62, s: 0.3 }, { p: 0.75, s: 1 }, { p: 1, s: 1 }] },
   { id: 'bullet', label: 'Bullet', hint: 'Ramp down, hold, ramp up', points: [{ p: 0, s: 2.5 }, { p: 0.3, s: 0.25 }, { p: 0.7, s: 0.25 }, { p: 1, s: 2.5 }] },
   { id: 'flash-in', label: 'Flash in', hint: 'Starts fast, settles', points: [{ p: 0, s: 4 }, { p: 0.25, s: 1 }, { p: 1, s: 1 }] },
   { id: 'flash-out', label: 'Flash out', hint: 'Settles, then rushes out', points: [{ p: 0, s: 1 }, { p: 0.75, s: 1 }, { p: 1, s: 4 }] },

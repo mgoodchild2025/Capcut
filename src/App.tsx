@@ -1,13 +1,23 @@
 import { Editor } from './components/Editor';
 import { Home } from './components/Home';
+import { reloadForUpdate } from './staleBuild';
 import { useEditor } from './store';
 
 export function App() {
   const view = useEditor((s) => s.view);
   const toast = useEditor((s) => s.toast);
+  const updateReady = useEditor((s) => s.updateReady);
   return (
     <>
       {view === 'home' ? <Home /> : <Editor />}
+      {updateReady && (
+        <div className="update-ready" role="status">
+          <span>A new version of ClipForge is ready.</span>
+          <button className="btn primary" onClick={() => void reloadForUpdate(true)}>
+            Update
+          </button>
+        </div>
+      )}
       {toast && (
         <div className="toast" key={toast.id} role="status">
           {toast.text}

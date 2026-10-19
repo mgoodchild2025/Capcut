@@ -53,12 +53,15 @@ async function put(req, res) {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // The app asking the server directly (the new-release check) goes straight to the network.
+  if (req.cache === 'no-store' || req.cache === 'reload') return;
   const url = new URL(req.url);
   const fonts = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
   if (url.origin !== self.location.origin && !fonts) return;
 
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).then((res) => put('./', res)).catch(async () => (await caches.match('./')) ?? Response.error()));
+    // Always ask the server (the browser may otherwise reuse its copy of the page for minutes after a release).
+    e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then((res) => put('./', res)).catch(async () => (await caches.match('./')) ?? Response.error()));
     return;
   }
   if (url.pathname.includes('/assets/') || fonts) {

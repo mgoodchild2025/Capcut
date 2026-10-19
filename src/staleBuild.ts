@@ -16,14 +16,19 @@ export const isStaleBuild = (e: unknown) => STALE.test(String((e as Error)?.mess
 
 let reloading = false;
 
-/** Saves the project and reloads into the latest version (at most once a minute, so it can't loop). */
-export async function reloadForUpdate(): Promise<boolean> {
+/**
+ * Saves the project and reloads into the latest version. Automatic reloads happen at most once a
+ * minute, so a missing file can't cause a loop; asking for the update (`asked`) always goes ahead.
+ */
+export async function reloadForUpdate(asked = false): Promise<boolean> {
   if (reloading) return true;
-  try {
-    const last = JSON.parse(sessionStorage.getItem(KEY) ?? 'null') as { at: number } | null;
-    if (last && Date.now() - last.at < 60_000) return false;
-  } catch {
-    /* storage unavailable: reload anyway */
+  if (!asked) {
+    try {
+      const last = JSON.parse(sessionStorage.getItem(KEY) ?? 'null') as { at: number } | null;
+      if (last && Date.now() - last.at < 60_000) return false;
+    } catch {
+      /* storage unavailable: reload anyway */
+    }
   }
   reloading = true;
   const { view, project } = useEditor.getState();
@@ -47,10 +52,47 @@ export async function resumeAfterUpdate() {
   }
   if (!note || Date.now() - note.at > 60_000) return;
   if (note.id) await openDraft(note.id);
-  toast('ClipForge updated to the latest version while it was open. Your project is saved; carry on where you were (press Export again if you were exporting).');
+  toast(note.id ? 'ClipForge is now on the latest version. Your project is saved and open where you left it (press Export again if you were exporting).' : 'ClipForge is now on the latest version.');
+}
+
+/** The app's own entry file, which changes with every release. */
+const runningEntry = () => document.querySelector<HTMLScriptElement>('script[type="module"][src*="assets/index-"]')?.src ?? null;
+
+/** Whether the server has a newer release than the one running (asks the server, never a cache). */
+export async function newerRelease(): Promise<boolean> {
+  const running = runningEntry();
+  if (!running || !navigator.onLine) return false;
+  try {
+    const html = await (await fetch('./', { cache: 'no-store' })).text();
+    const m = html.match(/src="([^"]*assets\/index-[^"]+\.js)"/);
+    return !!m && new URL(m[1], location.href).href !== running;
+  } catch {
+    return false;
+  }
+}
+
+/** Looks for a new release when the app comes back to the foreground (phones resume apps without reloading them). */
+function watchForRelease() {
+  let checking = false;
+  const check = async () => {
+    if (checking || document.visibilityState !== 'visible' || useEditor.getState().updateReady) return;
+    checking = true;
+    try {
+      if (!(await newerRelease())) return;
+      // Nothing open to lose on the home screen: just move to the new release.
+      // (The server has confirmed a newer release, so this can't loop.)
+      if (useEditor.getState().view === 'home') void reloadForUpdate(true);
+      else useEditor.setState({ updateReady: true });
+    } finally {
+      checking = false;
+    }
+  };
+  document.addEventListener('visibilitychange', () => void check());
+  setInterval(() => void check(), 15 * 60_000);
 }
 
 export function watchForStaleBuild() {
+  watchForRelease();
   // Vite reports a lazily loaded file that failed to load.
   window.addEventListener('vite:preloadError', (e) => {
     if (isStaleBuild((e as Event & { payload?: unknown }).payload)) void reloadForUpdate();

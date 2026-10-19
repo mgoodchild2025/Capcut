@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Engine, engine } from '../engine/engine';
 import { fastExportAvailable } from '../engine/exportPlan';
 import { projectDuration } from '../model/ops';
+import { isStaleBuild, reloadForUpdate } from '../staleBuild';
 import { toast, useEditor } from '../store';
 import { Segmented } from '../ui/controls';
 import { Icon } from '../ui/Icon';
@@ -67,7 +68,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       setPhase({ kind: 'done', url: URL.createObjectURL(result.blob), blob: result.blob, size: result.blob.size, ext: outExt });
     } catch (err) {
       if ((err as Error).name === 'AbortError') setPhase({ kind: 'setup' });
-      else setPhase({ kind: 'error', message: (err as Error).message });
+      // A release went out while the app was open: reload into it (the project is saved first).
+      else if (isStaleBuild(err) && (await reloadForUpdate())) setPhase({ kind: 'rendering', progress: 0, fast: true });
+      else setPhase({ kind: 'error', message: isStaleBuild(err) ? 'ClipForge was updated while it was open. Close and reopen the app, then export again.' : (err as Error).message });
     }
   };
 

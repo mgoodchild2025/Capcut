@@ -399,6 +399,7 @@ export function Preview() {
         {/* Under the whole preview rather than the frame: a tall frame on a phone is too narrow for it. */}
         {draw && <PenBar />}
       </div>
+      <Scrubber />
       <Transport />
     </section>
   );
@@ -530,6 +531,101 @@ function Timecode({ fps }: { fps: number }) {
     return useEditor.subscribe((s, prev) => s.currentTime !== prev.currentTime && show(s.currentTime));
   }, [fps]);
   return <b ref={ref} />;
+}
+
+/**
+ * A seek bar across the preview: drag (or tap) anywhere along it to move through the video.
+ * Its fill follows playback straight from the store, so it doesn't re-render the controls each frame.
+ */
+function Scrubber() {
+  const project = useEditor((s) => s.project);
+  const dur = projectDuration(project);
+  const fps = project.settings.fps;
+  const bar = useRef<HTMLDivElement>(null);
+  const fill = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{ t: number; resume: boolean } | null>(null);
+  // Pointer events can arrive faster than React renders, so the gesture itself lives in a ref.
+  const gesture = useRef<{ t: number; resume: boolean } | null>(null);
+  const update = (g: { t: number; resume: boolean } | null) => {
+    gesture.current = g;
+    setDrag(g);
+  };
+  useLayoutEffect(() => {
+    const show = (t: number) => {
+      const k = dur > 0 ? Math.min(1, Math.max(0, t / dur)) : 0;
+      fill.current?.style.setProperty('--k', String(k));
+      bar.current?.setAttribute('aria-valuenow', t.toFixed(2));
+      bar.current?.setAttribute('aria-valuetext', formatTimecode(t, fps));
+    };
+    show(useEditor.getState().currentTime);
+    return useEditor.subscribe((s, prev) => s.currentTime !== prev.currentTime && show(s.currentTime));
+  }, [dur, fps]);
+  const timeAt = (clientX: number) => {
+    const r = bar.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * dur;
+  };
+  const onDown = (e: React.PointerEvent) => {
+    if (dur <= 0 || e.button > 0) return;
+    e.preventDefault();
+    try {
+      bar.current!.setPointerCapture(e.pointerId);
+    } catch {
+      /* synthetic events */
+    }
+    // Playback pauses while you scrub and carries on from where you let go.
+    const resume = useEditor.getState().playing;
+    if (resume) engine.pause();
+    const t = timeAt(e.clientX);
+    engine.seek(t);
+    update({ t, resume });
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const g = gesture.current;
+    if (!g) return;
+    const t = timeAt(e.clientX);
+    engine.seek(t);
+    update({ ...g, t });
+  };
+  const onUp = () => {
+    const g = gesture.current;
+    if (!g) return;
+    if (g.resume && g.t < dur - 0.01) engine.play();
+    update(null);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    // Arrow keys move a second at a time here (the frame keys still work elsewhere).
+    const step = e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    e.stopPropagation();
+    engine.seek(useEditor.getState().currentTime + step);
+  };
+  return (
+    <div
+      ref={bar}
+      className={`scrubber ${drag ? 'dragging' : ''}`}
+      role="slider"
+      tabIndex={0}
+      aria-label="Playback position"
+      aria-valuemin={0}
+      aria-valuemax={+dur.toFixed(2)}
+      aria-disabled={dur === 0}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+      onKeyDown={onKey}
+    >
+      <div className="scrub-track">
+        <div ref={fill} className="scrub-fill" />
+      </div>
+      {drag && (
+        <span className="scrub-time" style={{ left: `clamp(32px, ${(dur > 0 ? drag.t / dur : 0) * 100}%, calc(100% - 32px))` }}>
+          {formatTimecode(drag.t, fps)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function Transport() {

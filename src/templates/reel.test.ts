@@ -446,6 +446,22 @@ describe('matchup lineup', () => {
   });
 });
 
+describe('slow motion', () => {
+  it('plays the action at real speed, slowing only for the moment itself', async () => {
+    const { rateAt } = await import('../model/timing');
+    for (const style of ['hype', 'team', 'victory'] as const) {
+      const p = buildReel(input(style), assets);
+      const plays = main(p).filter((c) => c.kind === 'video' && c.curve);
+      expect(plays.length, style).toBeGreaterThan(0);
+      for (const c of plays) {
+        const rates = Array.from({ length: 41 }, (_, i) => rateAt(c, (c.duration * i) / 40));
+        expect(Math.max(...rates), style).toBeLessThanOrEqual(1 + 1e-9);
+        expect(Math.min(...rates), style).toBeLessThan(0.5);
+      }
+    }
+  });
+});
+
 describe('cover frame', () => {
   it('every style shows its finished title as the cover, before it wipes away', () => {
     for (const style of ['recruiting', 'hype', 'recap', 'spotlight', 'team', 'lineup', 'victory', 'potw', 'matchup'] as const) {

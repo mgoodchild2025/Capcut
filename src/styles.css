@@ -1094,6 +1094,80 @@ button:disabled {
   font-weight: 600;
 }
 
+.scrubber {
+  position: relative;
+  height: 22px;
+  margin: 4px 12px 0;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.scrub-track {
+  position: relative;
+  width: 100%;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--panel-3);
+  transition: height 0.12s;
+}
+
+.scrubber:hover .scrub-track,
+.scrubber.dragging .scrub-track,
+.scrubber:focus-visible .scrub-track {
+  height: 6px;
+}
+
+.scrub-fill {
+  --k: 0;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--k) * 100%);
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* The handle rides on the end of the fill. */
+.scrub-fill::after {
+  content: '';
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translateY(-50%) scale(0.85);
+  transition: transform 0.12s;
+}
+
+.scrubber.dragging .scrub-fill::after,
+.scrubber:hover .scrub-fill::after {
+  transform: translateY(-50%) scale(1);
+}
+
+.scrubber:focus-visible .scrub-fill::after {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.scrub-time {
+  position: absolute;
+  bottom: 20px;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(8, 10, 14, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .transport-mid {
   display: flex;
   align-items: center;

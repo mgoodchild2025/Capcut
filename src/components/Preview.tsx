@@ -555,6 +555,9 @@ function Transport() {
         <span> / {formatTimecode(dur, fps)}</span>
       </span>
       <div className="transport-mid">
+        <button className="icon-btn" title="Back to start (Home)" aria-label="Back to start" onClick={() => engine.seek(0)} disabled={dur === 0}>
+          <Icon name="toStart" size={16} />
+        </button>
         <button className="icon-btn" title="Previous frame (Left)" onClick={() => engine.stepFrames(-1)}>
           <Icon name="stepBack" size={16} />
         </button>

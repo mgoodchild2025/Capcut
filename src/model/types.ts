@@ -285,4 +285,6 @@ export interface Project {
   tracks: Track[];
   clips: Clip[];
   markers?: Marker[];
+  /** A moment to show as the cover while the playhead waits at the start (a reel's finished title). */
+  poster?: number;
 }

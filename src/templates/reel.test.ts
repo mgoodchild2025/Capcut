@@ -446,6 +446,18 @@ describe('matchup lineup', () => {
   });
 });
 
+describe('cover frame', () => {
+  it('every style shows its finished title as the cover, before it wipes away', () => {
+    for (const style of ['recruiting', 'hype', 'recap', 'spotlight', 'team', 'lineup', 'victory', 'potw', 'matchup'] as const) {
+      const p = buildReel(input(style), assets);
+      const first = main(p)[0];
+      expect(first.kind, style).toBe('graphic');
+      expect(p.poster, style).toBeGreaterThan(1.5);
+      expect(p.poster!, style).toBeLessThanOrEqual(first.start + first.duration - 0.5);
+    }
+  });
+});
+
 describe('songs that start between beats', () => {
   it('start on a beat, so cuts on the bar land on the music', () => {
     // 120 BPM with the first beat 0.3 s in, like most recordings.

@@ -43,3 +43,14 @@ describe('project files', () => {
     expect(back.assets.map((a) => a.meta.id).sort()).toEqual(['depth', 'logo', 'opp', 'photo', 'tile']);
   });
 });
+
+describe('analysed games in project files', () => {
+  it('follow their video to its new id', async () => {
+    const { remapMatches } = await import('./projectFile');
+    const m = remapMatches({ a1: { assetId: 'a1', analyzedAt: 1, rallies: [{ id: 'r', start: 1, end: 5, peak: 3, score: 100, reasons: [] }] } }, (id) => (id === 'a1' ? 'b9' : id));
+    expect(Object.keys(m!)).toEqual(['b9']);
+    expect(m!.b9.assetId).toBe('b9');
+    expect(m!.b9.rallies[0].end).toBe(5);
+    expect(remapMatches(undefined, (x) => x)).toBeUndefined();
+  });
+});

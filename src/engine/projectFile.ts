@@ -47,6 +47,12 @@ export function remapClip(c: Clip, map: (id: string) => string): Clip {
   };
 }
 
+/** Analysed games follow their video's new id. */
+export function remapMatches(m: Project['matches'], map: (id: string) => string): Project['matches'] {
+  if (!m) return m;
+  return Object.fromEntries(Object.values(m).map((x) => [map(x.assetId), { ...x, assetId: map(x.assetId) }]));
+}
+
 const fileName = (name: string) => `${name.replace(/[^\w\- ]+/g, '').trim() || 'project'}${PROJECT_EXT}`;
 
 /** Packs a stored draft into a single file. */
@@ -57,8 +63,8 @@ export async function draftToFile(id: string): Promise<File> {
 }
 
 export function packProject(raw: { project: Project; thumbnail?: string; assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] }): File {
-  // Only media the timeline uses (clips, and what graphics draw); deleted clips can leave orphans behind.
-  const used = new Set(raw.project.clips.flatMap(mediaRefs));
+  // Only media the timeline uses (clips, and what graphics draw) and analysed games; deleted clips can leave orphans behind.
+  const used = new Set([...raw.project.clips.flatMap(mediaRefs), ...Object.keys(raw.project.matches ?? {})]);
   const assets = raw.assets.filter((a) => used.has(a.meta.id));
   const header: Header = {
     app: 'ClipForge',
@@ -109,6 +115,7 @@ export async function importProjectFile(file: Blob): Promise<string> {
     id: uid('p_'),
     updatedAt: now,
     clips: project.clips.map((c) => remapClip(c, (id) => ids.get(id) ?? id)),
+    matches: remapMatches(project.matches, (id) => ids.get(id) ?? id),
   };
   await saveDraftRaw(
     next,

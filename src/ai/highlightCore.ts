@@ -92,6 +92,21 @@ function smooth(values: Float32Array, radius: number): Float32Array {
   return out;
 }
 
+/**
+ * Loudness without the referee: whistles are loud but aren't the crowd, so whistle frames hold the
+ * previous level. The mask is widened so a whistle's attack and decay don't leak through as a cheer.
+ */
+function crowdLoudness(f: Features): Float32Array {
+  const pad = Math.ceil(0.15 / f.audioHop);
+  const masked = new Uint8Array(f.loudness.length);
+  for (let i = 0; i < masked.length; i++) {
+    if (f.whistle[i] >= 0.12) for (let k = Math.max(0, i - pad); k <= Math.min(masked.length - 1, i + pad); k++) masked[k] = 1;
+  }
+  const out = new Float32Array(f.loudness.length);
+  for (let i = 0; i < out.length; i++) out[i] = masked[i] ? (i ? out[i - 1] : -90) : f.loudness[i];
+  return out;
+}
+
 export interface FindOptions {
   /** Longest highlight, seconds. */
   maxLength?: number;
@@ -115,16 +130,7 @@ export function findHighlights(f: Features, opts: FindOptions = {}): Highlight[]
   const hop = 0.25;
   const n = Math.max(1, Math.ceil(f.duration / hop));
 
-  // Whistles are loud but aren't the crowd: hold the previous level through whistle frames.
-  // The mask is widened so a whistle's attack and decay don't leak through as a cheer.
-  const pad = Math.ceil(0.15 / f.audioHop);
-  const masked = new Uint8Array(f.loudness.length);
-  for (let i = 0; i < masked.length; i++) {
-    if (f.whistle[i] >= 0.12) for (let k = Math.max(0, i - pad); k <= Math.min(masked.length - 1, i + pad); k++) masked[k] = 1;
-  }
-  const noWhistle = new Float32Array(f.loudness.length);
-  for (let i = 0; i < noWhistle.length; i++) noWhistle[i] = masked[i] ? (i ? noWhistle[i - 1] : -90) : f.loudness[i];
-  const loud = resample(noWhistle, f.audioHop, hop, f.duration, 'max');
+  const loud = resample(crowdLoudness(f), f.audioHop, hop, f.duration, 'max');
   const motion = f.motion.length ? resample(f.motion, f.motionHop, hop, f.duration, 'mean') : new Float32Array(n);
   // Crowd: loudness relative to the preceding 15 s.
   const crowd = new Float32Array(n);
@@ -307,4 +313,145 @@ export function frameDiff(a: Uint8ClampedArray | Uint8Array, b: Uint8ClampedArra
   let s = 0;
   for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
   return s / a.length;
+}
+
+// ---------- every rally of a match ----------
+
+export interface Rally {
+  start: number;
+  end: number;
+  /** Moment of peak action. */
+  peak: number;
+  /** 0..100, relative to the best rally of the match. */
+  score: number;
+  reasons: string[];
+  /** The serve whistle and the whistle that ended the point, when heard. */
+  serve?: number;
+  whistleEnd?: number;
+}
+
+export interface RallyOptions {
+  /** Shortest rally kept, seconds (a serve into the net is short). */
+  minLength?: number;
+  /** Longest stretch treated as one rally before it's split at its quietest moment. */
+  maxLength?: number;
+}
+
+/**
+ * Splits a whole match into its rallies. Play shows as sustained motion on court; referee
+ * whistles start (serve) and end each point, so they set the edges where they're heard. A
+ * stretch between two whistles with play in it counts too, for points the camera barely saw move.
+ */
+export function findRallies(f: Features, opts: RallyOptions = {}): Rally[] {
+  const minLength = opts.minLength ?? 2.5;
+  const maxLength = opts.maxLength ?? 40;
+  const hop = 0.25;
+  const n = Math.max(1, Math.ceil(f.duration / hop));
+  const motion = f.motion.length ? resample(f.motion, f.motionHop, hop, f.duration, 'mean') : new Float32Array(n);
+  const level = smooth(motion, 3);
+  const motionZ = robustZ(level);
+  const whistles = detectWhistles(f);
+  const loud = resample(crowdLoudness(f), f.audioHop, hop, f.duration, 'max');
+  const at = (t: number) => Math.min(n - 1, Math.max(0, Math.round(t / hop)));
+  // A match is mostly two states, play and the pause between points: thresholds sit between the
+  // calm level (30th percentile) and the busy one (90th). Footage without that contrast has no play to find.
+  const sorted = Array.from(level).sort((x, y) => x - y);
+  const pct = (q: number) => sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
+  const calm = pct(0.3);
+  const busy = pct(0.9);
+  const contrast = busy - calm > Math.max(0.5, calm * 0.35);
+  const enter = calm + (busy - calm) * 0.5;
+  const leave = calm + (busy - calm) * 0.25;
+  const meanLevel = (a: number, b: number) => {
+    let s = 0;
+    let c = 0;
+    for (let k = at(a); k <= at(b); k++) {
+      s += level[k];
+      c++;
+    }
+    return c ? s / c : 0;
+  };
+
+  // Play: motion rises well above the calm level and stays up (hysteresis), small gaps bridged.
+  const segs: [number, number][] = [];
+  let on = -1;
+  let quiet = 0;
+  for (let i = 0; i < n && contrast; i++) {
+    const z = level[i];
+    if (on < 0) {
+      if (z > enter) {
+        on = i;
+        quiet = 0;
+      }
+    } else if (z < leave) {
+      if (++quiet * hop >= 1.5) {
+        segs.push([on * hop, (i - quiet + 1) * hop]);
+        on = -1;
+      }
+    } else {
+      quiet = 0;
+    }
+  }
+  if (on >= 0) segs.push([on * hop, f.duration]);
+
+  // Long stretches (the camera panning, a timeout with warm-ups) are split where they're calmest.
+  // Each piece notes whether its edges are cuts (made here) rather than play starting or stopping.
+  const split = (a: number, b: number, cutA = false, cutB = false): [number, number, boolean, boolean][] => {
+    if (b - a <= maxLength) return [[a, b, cutA, cutB]];
+    let best = at(a + 3);
+    for (let k = at(a + 3); k <= at(b - 3); k++) if (level[k] < level[best]) best = k;
+    return [...split(a, best * hop, cutA, true), ...split(best * hop, b, true, cutB)];
+  };
+  const play = segs.flatMap(([a, b]) => split(a, b)).filter(([a, b]) => b - a >= minLength * 0.6);
+
+  const rallies: Omit<Rally, 'score'>[] = play.map(([a, b, cutA, cutB]) => {
+    // The serve whistle just before play starts; the whistle that ends the point just after it stops.
+    const serve = cutA ? undefined : [...whistles].reverse().find((w) => w <= a + 1.5 && w >= a - 5);
+    const whistleEnd = cutB ? undefined : whistles.find((w) => w >= b - 2 && w <= b + 3 && (serve === undefined || w > serve + 1));
+    const start = Math.max(0, cutA ? a : serve !== undefined ? serve + 0.2 : a - 1);
+    const end = Math.min(f.duration, cutB ? b : (whistleEnd ?? b) + 1.2);
+    return { start, end, peak: 0, reasons: [], serve, whistleEnd };
+  });
+  // Points framed by two whistles with play between them, that motion alone missed.
+  for (let i = 0; i + 1 < whistles.length; i++) {
+    const [a, b] = [whistles[i], whistles[i + 1]];
+    if (b - a < minLength || b - a > maxLength) continue;
+    if (rallies.some((r) => a < r.end - 0.5 && r.start < b - 0.5)) continue;
+    if (contrast && meanLevel(a + 0.5, b - 0.3) > leave) rallies.push({ start: a + 0.2, end: Math.min(f.duration, b + 1.2), peak: 0, reasons: [], serve: a, whistleEnd: b });
+  }
+
+  // In time order, overlaps merged, too-short ones dropped.
+  rallies.sort((x, y) => x.start - y.start);
+  const merged: Omit<Rally, 'score'>[] = [];
+  for (const r of rallies) {
+    const last = merged[merged.length - 1];
+    if (last && r.start < last.end - 0.3) {
+      last.end = Math.max(last.end, r.end);
+      last.whistleEnd = r.whistleEnd ?? last.whistleEnd;
+    } else merged.push({ ...r });
+  }
+  const kept = merged.filter((r) => r.end - r.start >= minLength);
+
+  // How good each one was: the hardest action, and the crowd after the point against the rally itself.
+  const valued = kept.map((r) => {
+    let pk = at(r.start);
+    for (let k = at(r.start); k <= at(r.end); k++) if (motionZ[k] > motionZ[pk]) pk = k;
+    const stop = r.whistleEnd ?? r.end - 1.2;
+    const during = median(loud.subarray(at(r.start), Math.max(at(r.start) + 1, at(stop))));
+    let after = -90;
+    for (let k = at(stop + 0.3); k <= at(stop + 3.5); k++) after = Math.max(after, loud[k]);
+    const reaction = Math.max(0, after - during);
+    const length = (r.whistleEnd ?? r.end) - (r.serve ?? r.start);
+    const value = Math.min(1, Math.max(0, motionZ[pk]) / 4) * 0.35 + Math.min(1, reaction / 18) * 0.45 + Math.min(1, length / 20) * 0.2;
+    const reasons: string[] = [];
+    if (reaction >= 12) reasons.push('Crowd erupts');
+    else if (reaction >= 6) reasons.push('Crowd reacts');
+    if (length >= 12) reasons.push('Long rally');
+    return { ...r, peak: pk * hop, reasons, value, burst: level[pk] };
+  });
+  // A big play stands out from the other rallies, not just from the pauses between them.
+  const typical = median(valued.map((r) => r.burst));
+  for (const r of valued) if (valued.length > 2 && r.burst > typical * 1.3) r.reasons.push('Big play');
+  const best = Math.max(1e-6, ...valued.map((r) => r.value));
+  return valued.map(({ value, burst, ...r }) => ({ ...r, score: Math.round((value / best) * 100) }));
 }

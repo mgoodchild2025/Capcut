@@ -287,4 +287,30 @@ export interface Project {
   markers?: Marker[];
   /** A moment to show as the cover while the playhead waits at the start (a reel's finished title). */
   poster?: number;
+  /** Full games analysed into rallies, by video asset id. */
+  matches?: Record<string, MatchData>;
+}
+
+/** One point of a match, found by analysing the game video (source seconds). */
+export interface MatchRally {
+  id: string;
+  start: number;
+  end: number;
+  /** Moment of peak action. */
+  peak: number;
+  /** 0..100 against the match's best rally. */
+  score: number;
+  reasons: string[];
+  /** Serve and end-of-point whistles, when heard. */
+  serve?: number;
+  whistleEnd?: number;
+  /** Small frame at the peak (JPEG data URL). */
+  thumb?: string;
+}
+
+/** A full game analysed into its rallies. */
+export interface MatchData {
+  assetId: string;
+  analyzedAt: number;
+  rallies: MatchRally[];
 }

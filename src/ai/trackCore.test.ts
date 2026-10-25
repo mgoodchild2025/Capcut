@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { followAt, smoothPath, trackPoint, type TrackFrame } from './trackCore';
+import { followAt, smoothPath, trackPoint, type TrackFrame, findLookalike } from './trackCore';
 
 const W = 256;
 const H = 144;
@@ -108,5 +108,39 @@ describe('path helpers', () => {
     );
     expect(Math.max(...p.map((q) => q.x)) - Math.min(...p.map((q) => q.x))).toBeLessThan(0.2);
     expect(followAt([{ t: 0, x: 0, y: 0 }, { t: 2, x: 1, y: 0.5 }], 1)).toEqual({ x: 0.5, y: 0.25 });
+  });
+});
+
+describe('finding a player again in another play', () => {
+  const W = 128;
+  const H = 72;
+  /** A court with a red player at (px, py) and a blue one elsewhere. */
+  const scene = (px: number, py: number, bx: number, by: number) => {
+    const f = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) {
+      f[i * 4] = 176;
+      f[i * 4 + 1] = 120;
+      f[i * 4 + 2] = 64;
+      f[i * 4 + 3] = 255;
+    }
+    const box = (cx: number, cy: number, c: [number, number, number]) => {
+      for (let y = cy - 6; y <= cy + 6; y++) for (let x = cx - 3; x <= cx + 3; x++) if (x >= 0 && y >= 0 && x < W && y < H) f.set([...c, 255], (y * W + x) * 4);
+    };
+    box(px, py, [220, 30, 30]);
+    box(bx, by, [30, 40, 220]);
+    return f;
+  };
+  it('finds the same kit in a new spot', () => {
+    const a = scene(30, 50, 90, 20);
+    const b = scene(52, 46, 70, 22);
+    const g = findLookalike(a, b, W, H, { x: 30 / W, y: 50 / H });
+    expect(Math.abs(g.x * W - 52)).toBeLessThanOrEqual(2);
+    expect(Math.abs(g.y * H - 46)).toBeLessThanOrEqual(2);
+    expect(g.sure).toBeGreaterThan(0.3);
+  });
+  it('is unsure when the player is nowhere to be seen', () => {
+    const a = scene(30, 50, 90, 20);
+    const b = scene(-50, -50, 70, 22);
+    expect(findLookalike(a, b, W, H, { x: 30 / W, y: 50 / H }).sure).toBeLessThan(0.3);
   });
 });

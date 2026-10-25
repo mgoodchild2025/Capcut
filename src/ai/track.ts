@@ -35,3 +35,26 @@ export async function trackPlayer(asset: Asset, from: number, to: number, at: { 
     input.dispose();
   }
 }
+
+/** Small colour frames of a video at the given source times (for finding a player again across plays). */
+export async function framesAt(asset: Asset, times: number[], signal?: AbortSignal): Promise<{ w: number; h: number; frames: TrackFrame[] }> {
+  const blob = await (await fetch(asset.url)).blob();
+  const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`Can't decode "${asset.name}" in this browser.`);
+    const first = await track.getFirstTimestamp();
+    const h = Math.max(16, Math.round((WIDTH * (asset.height || 9)) / (asset.width || 16)));
+    const sink = new CanvasSink(track, { width: WIDTH, height: h, fit: 'fill', poolSize: 2 });
+    const frames: TrackFrame[] = [];
+    for (const t of times) {
+      if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+      const frame = await sink.getCanvas(first + Math.min(t, asset.duration - 0.05));
+      const ctx = frame ? ((frame.canvas as HTMLCanvasElement).getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D) : null;
+      frames.push({ t, rgba: ctx ? ctx.getImageData(0, 0, WIDTH, h).data : new Uint8ClampedArray(WIDTH * h * 4) });
+    }
+    return { w: WIDTH, h, frames };
+  } finally {
+    input.dispose();
+  }
+}

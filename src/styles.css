@@ -5281,3 +5281,33 @@ input[type='range']::-moz-range-thumb {
     max-width: 150px;
   }
 }
+
+/* ---------- game to reel ---------- */
+.g2r-banner {
+  background: linear-gradient(120deg, rgba(0, 194, 209, 0.32), rgba(29, 78, 216, 0.3) 55%, rgba(251, 191, 36, 0.25));
+}
+
+.g2r-video {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.g2r-video .select {
+  flex: 1;
+  min-width: 200px;
+}
+
+.g2r-who {
+  display: flex;
+  margin-bottom: 12px;
+}
+
+.g2r-who button {
+  flex: 1;
+}
+
+.spot-ring.guess {
+  border-style: dashed;
+}

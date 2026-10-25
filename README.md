@@ -127,6 +127,10 @@ src/
 
 The preview, export and audio mix all read the same timing model (`model/timing.ts`) and compositor (`engine/render.ts`), so what you see is what you export.
 
+## Game to reel
+
+**Game to reel** on the home screen (or the Sports tab) turns a whole game video into a finished reel. Choose the video and whether it's a player's reel or the team's, and pick a template. ClipForge finds every rally and keeps the best (eight for a player, ten for a team). For a player reel, tap your player once; ClipForge looks for them in the other plays (by their look and where they were) and asks you to confirm each guess, or tap the right player, or skip a play they aren't in. Then it builds the reel: titles, music cut to the beat, and your player spotlighted and followed through each play.
+
 ## Match breakdown
 
 Open **Break down a full match** in the Sports tab with a whole game video. ClipForge finds every rally: referee whistles mark each serve and the end of each point, and movement on court shows the play between them (points the camera barely saw move still count when two whistles frame them). Each rally gets a frame, its length and a rating (the crowd's reaction, rally length and the hardest action). Watch any rally, or **Play all** for the whole game without the pauses; nudge a rally's start or end, drop anything that isn't a rally, sort by best, pick the best eight, and add them to the timeline or **Make a reel** with them already picked. The breakdown is saved with the project (and in project files).

@@ -24,6 +24,7 @@ import { MobileWorkspace } from './MobileWorkspace';
 import { ReelWizard } from './ReelWizard';
 import { HelpDialog } from './HelpDialog';
 import { Preview } from './Preview';
+import { GameToReel } from './GameToReel';
 import { MatchView } from './MatchView';
 import { Timeline } from './Timeline';
 
@@ -36,10 +37,11 @@ export function Editor() {
   const mobile = useIsMobile();
   const wizard = useEditor((s) => !!s.wizard);
   const match = useEditor((s) => !!s.match);
+  const quick = useEditor((s) => !!s.quick);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || exporting || useEditor.getState().wizard || useEditor.getState().match) return;
+      if (isTypingTarget(e.target) || exporting || useEditor.getState().wizard || useEditor.getState().match || useEditor.getState().quick) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (mod && key === 'z') {
@@ -159,6 +161,7 @@ export function Editor() {
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {wizard && <ReelWizard />}
       {match && <MatchView />}
+      {quick && <GameToReel />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}
       {fileDrag && <div className="drop-overlay">Drop to import</div>}
     </div>

@@ -2255,6 +2255,148 @@ function drawCommit(g: G) {
   panelWipe(g, seg(t, g.d - 0.5, g.d + 0.15));
 }
 
+/** Game summary for families: the final score, set by set, and who led the team. */
+function drawSummary(g: G) {
+  const { ctx, W, H, S, t, portrait, spec } = g;
+  backdrop(g);
+  const names = [spec.text.usName || 'HOME', spec.text.themName || 'AWAY'];
+  const totals = [spec.text.usScore ?? '', spec.text.themScore ?? ''];
+  const logos = [spec.logo, spec.oppLogo];
+  const rows = (spec.rows ?? []).slice(0, 5);
+  const players = spec.players ?? [];
+  const setLine = (spec.sets ?? []).map(([a, b]) => `${a}-${b}`).join('   ');
+  const win = +totals[0] > +totals[1] ? 0 : +totals[1] > +totals[0] ? 1 : -1;
+
+  // The score: logos and names either side of the big numbers.
+  const scoreBlock = (cx: number, y: number, w: number) => {
+    const ks = S * 0.075;
+    headline(g, (spec.text.kicker || 'FINAL').toUpperCase(), cx, y + ks, ks, { color: g.c2, reveal: seg(t, 0.05, 0.45) });
+    if (spec.text.sub) label(g, spec.text.sub.toUpperCase(), cx, y + ks * 1.55, S * 0.026, '#cbd5e1', 'center', 700, 0.18);
+    y += ks * 2.1;
+    const ls = S * 0.17;
+    for (let i = 0; i < 2; i++) {
+      const p = eExpo(seg(t, 0.3 + i * 0.15, 0.8 + i * 0.15));
+      if (p <= 0) continue;
+      const x = cx + (i ? 1 : -1) * w * 0.33;
+      ctx.save();
+      ctx.globalAlpha = p;
+      ctx.translate((1 - p) * (i ? 1 : -1) * W * 0.3, 0);
+      if (!logoAt(g, logos[i], x, y + ls / 2, ls)) {
+        ctx.fillStyle = i ? '#3a3d48' : g.c1;
+        ctx.beginPath();
+        ctx.arc(x, y + ls / 2, ls * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+        headline(g, names[i].slice(0, 1).toUpperCase(), x, y + ls * 0.5 + ls * 0.2, ls * 0.5, { shadow: false });
+      }
+      const nm = names[i].toUpperCase();
+      headline(g, nm, x, y + ls + S * 0.065, fit(ctx, nm, w * 0.36, S * 0.05), { color: i === win || win < 0 ? '#fff' : 'rgba(255,255,255,0.7)', shadow: false });
+      ctx.restore();
+    }
+    const cp = eBack(seg(t, 0.9, 1.3));
+    if (cp > 0) {
+      const ns = S * 0.17;
+      ctx.save();
+      ctx.translate(cx, y + ls * 0.5 + ns * 0.36);
+      ctx.scale(Math.max(0.01, cp), Math.max(0.01, cp));
+      const off = Math.max(w * 0.09, ns * 0.52);
+      headline(g, String(totals[0]), -off, 0, ns, { color: win === 0 ? g.c2 : '#fff' });
+      headline(g, '-', 0, -ns * 0.06, ns * 0.6, { color: 'rgba(255,255,255,0.5)', shadow: false });
+      headline(g, String(totals[1]), off, 0, ns, { color: win === 1 ? g.c2 : '#fff' });
+      ctx.restore();
+    }
+    y += ls + S * 0.1;
+    if (setLine) {
+      ctx.save();
+      ctx.globalAlpha = eOut(seg(t, 1.2, 1.6));
+      label(g, setLine, cx, y + S * 0.02, Math.min(S * 0.034, (w * 0.9) / Math.max(1, setLine.length * 0.62)), '#e5e7eb', 'center', 800, 0.08);
+      ctx.restore();
+      y += S * 0.06;
+    }
+    const result = (spec.text.result || '').toUpperCase();
+    if (result) {
+      const rs = fit(ctx, result, w * 0.85, S * 0.055);
+      font(ctx, rs, 900);
+      const rw = ctx.measureText(result).width + rs * 1.2;
+      const rp = eExpo(seg(t, 1.4, 1.9));
+      ctx.save();
+      ctx.fillStyle = accent(g);
+      para(ctx, cx - rw / 2, y, rw * rp, rs * 1.35, rs * 0.3);
+      ctx.fill();
+      ctx.restore();
+      if (rp > 0.6) headline(g, result, cx, y + rs * 1.08, rs, { color: g.ink, shadow: false });
+      y += rs * 1.35 + S * 0.04;
+    }
+    return y;
+  };
+
+  // The leaders: one plate each, value, stat, then who.
+  const leaders = (x: number, y: number, w: number, bottom: number) => {
+    if (!rows.length) return;
+    const hs = S * 0.032;
+    label(g, (spec.text.leadersTitle || 'TEAM LEADERS').toUpperCase(), x, y + hs, hs, g.c2, 'left', 900, 0.2);
+    y += hs * 2.2;
+    const rh = Math.min(S * 0.13, (bottom - y) / rows.length);
+    rows.forEach(([k, v], i) => {
+      const start = 1.5 + i * 0.15;
+      const p = eExpo(seg(t, start, start + 0.45));
+      if (p <= 0) return;
+      const ry = y + i * rh;
+      ctx.save();
+      ctx.globalAlpha = p;
+      ctx.translate((1 - p) * W * 0.3, 0);
+      const gr = ctx.createLinearGradient(x, 0, x + w, 0);
+      gr.addColorStop(0, 'rgba(255,255,255,0.12)');
+      gr.addColorStop(1, 'rgba(255,255,255,0.03)');
+      ctx.fillStyle = gr;
+      para(ctx, x, ry + rh * 0.08, w, rh * 0.84, rh * 0.15);
+      ctx.fill();
+      ctx.fillStyle = accent(g);
+      para(ctx, x, ry + rh * 0.08, rh * 0.08, rh * 0.84, rh * 0.15);
+      ctx.fill();
+      const vs = rh * 0.6;
+      headline(g, String(v), x + rh * 0.35, ry + rh * 0.72, vs, { align: 'left', color: '#fff' });
+      font(ctx, vs, 900);
+      const vw = Math.max(rh * 1.1, ctx.measureText(String(v)).width + rh * 0.3);
+      label(g, String(k).toUpperCase(), x + rh * 0.35 + vw, ry + rh * 0.5, rh * 0.2, '#cbd5e1', 'left', 800, 0.16);
+      const who = players[i];
+      if (who) {
+        const nm = `${who.number ? `#${who.number} ` : ''}${who.name}`.toUpperCase();
+        font(ctx, rh * 0.2, 800, SANS);
+        const kw = ctx.measureText(String(k).toUpperCase()).width + String(k).length * rh * 0.2 * 0.16;
+        const room = w - (rh * 0.35 + vw + kw + rh * 0.5) - rh * 0.3;
+        headline(g, nm, x + w - rh * 0.3, ry + rh * 0.66, fit(ctx, nm, room, rh * 0.36), { align: 'right', color: '#fff', shadow: false });
+      }
+      ctx.restore();
+    });
+  };
+
+  if (portrait) {
+    const w = Math.min(W * 0.9, S * 1.0);
+    const n = Math.max(1, rows.length);
+    const estimate = S * (0.075 * 2.1 + 0.17 + 0.1 + (setLine ? 0.06 : 0) + 0.12 + 0.07) + n * S * 0.13;
+    let y = Math.max(H * 0.06, (H - estimate) * 0.42);
+    y = scoreBlock(W / 2, y, w);
+    leaders((W - w) / 2, y + S * 0.02, w, Math.min(H - S * (spec.text.footer ? 0.1 : 0.05), y + S * 0.09 + n * S * 0.13));
+  } else {
+    const lw = W * 0.44;
+    const left = W * 0.05;
+    const blockH = S * (0.075 * 2.1 + 0.17 + 0.1 + (setLine ? 0.06 : 0) + 0.12);
+    scoreBlock(left + lw / 2, Math.max(S * 0.06, (H - blockH) / 2), lw);
+    const rx = W * 0.54;
+    const n = Math.max(1, rows.length);
+    const lh = S * 0.07 + n * S * 0.13;
+    const ly = Math.max(S * 0.08, (H - lh) / 2);
+    leaders(rx, ly, W * 0.41, Math.min(H - S * (spec.text.footer ? 0.1 : 0.05), ly + lh));
+  }
+  if (spec.text.footer) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 2.2, 2.7));
+    label(g, spec.text.footer, W / 2, H - S * 0.045, S * 0.024, 'rgba(255,255,255,0.7)', 'center', 700, 0.1);
+    ctx.restore();
+  }
+  panelWipe(g, seg(t, g.d - 0.45, g.d + 0.15));
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -2272,10 +2414,11 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   potw: drawPotw,
   badge: drawBadge,
   commit: drawCommit,
+  summary: drawSummary,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
-export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit'];
+export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit', 'summary'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {

@@ -65,6 +65,7 @@ export const GRAPHIC_NAMES: Record<import('./types').GraphicType, string> = {
   potw: 'Award title',
   badge: 'Award badge',
   commit: 'Commitment',
+  summary: 'Game summary',
 };
 
 export function createGraphicClip(graphic: import('./types').GraphicSpec, start: number, duration: number, label = '', assetId?: string): Clip {

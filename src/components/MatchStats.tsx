@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { drawPoster, graphicsFonts, renderPoster, shareImages } from '../engine/poster';
+import { toast } from '../store';
+import { POSTER_FORMATS, POSTER_IMAGES, summarySpec, type PosterFormat } from '../templates/posters';
+import { useImg } from './PosterStudio';
 import { setMatchInfo, tagRally } from '../actions';
 import type { MatchData, MatchPlayer, MatchRally, RallyAction } from '../model/types';
 import { OPP_TAGS, pct3, playCounts, VOLLEY_TAGS, volleyStats, type MatchScore, type QuickTag, type RallyScore } from '../stats/matchStats';
@@ -332,6 +336,69 @@ export function StatsPanel({ match, score, watch }: { match: MatchData; score: M
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/** The game in one image for families: final score, sets and the team's leaders, to post or send. */
+export function SummaryCard({ match }: { match: MatchData }) {
+  const [format, setFormat] = useState<PosterFormat>('post');
+  const [busy, setBusy] = useState(false);
+  const info = useMemo(() => loadInfo(), []);
+  const logo = useImg(info.logo);
+  const opp = useImg(info.oppLogo);
+  const images = useMemo(() => ({ [POSTER_IMAGES.logo]: logo, [POSTER_IMAGES.opp]: opp }), [logo, opp]);
+  const spec = useMemo(() => summarySpec(match, isVolley(match), info, { logo: !!logo, opp: !!opp }), [match, info, logo, opp]);
+  const size = POSTER_FORMATS.find((f) => f.id === format)!.size;
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const [W, H] = size;
+    const k = 540 / Math.max(W, H);
+    c.width = Math.round(W * k);
+    c.height = Math.round(H * k);
+    const ctx = c.getContext('2d')!;
+    const draw = () => {
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      drawPoster(ctx, spec, W, H, images, null);
+    };
+    draw();
+    let live = true;
+    void graphicsFonts().then(() => live && draw());
+    return () => {
+      live = false;
+    };
+  }, [spec, size, images]);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const name = `${slug(`${spec.text.usName} vs ${spec.text.themName}`) || 'game'}-summary-${format}.png`;
+      const file = new File([await renderPoster(spec, size, images, null)], name, { type: 'image/png' });
+      if ((await shareImages([file])) === 'downloaded') toast(`Saved ${name}`);
+    } catch (e) {
+      toast(`Couldn't make the image: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="summary-card">
+      <canvas ref={canvas} className={`summary-preview ${format}`} aria-label="Game summary preview" />
+      <div className="summary-actions">
+        <div className="segmented" role="radiogroup" aria-label="Size">
+          {POSTER_FORMATS.map((f) => (
+            <button key={f.id} role="radio" aria-checked={format === f.id} className={format === f.id ? 'on' : ''} title={f.hint} onClick={() => setFormat(f.id)}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <button className="btn primary" disabled={busy} onClick={() => void save()}>
+          <Icon name="share" /> {busy ? 'Making...' : 'Save image'}
+        </button>
+      </div>
+      <small className="muted">Team names and logos come from Match setup and your reel details.</small>
     </div>
   );
 }

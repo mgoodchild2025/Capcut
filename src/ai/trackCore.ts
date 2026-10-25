@@ -235,3 +235,44 @@ export function followAt(path: FollowPoint[], t: number): { x: number; y: number
   }
   return path[path.length - 1];
 }
+
+/**
+ * Best guess at where the player tapped in `src` (at `at`, fractions) is in another frame `dst`
+ * (another play of the same game): the whole frame is searched for their look, nudged towards
+ * where they were (players keep to their side and their position). `sure` is 0..1: how clearly
+ * the best spot beats a lookalike elsewhere (teammates share a kit, so it's often modest).
+ */
+export function findLookalike(src: Uint8ClampedArray, dst: Uint8ClampedArray, w: number, h: number, at: { x: number; y: number }, opts: TrackOptions = {}): { x: number; y: number; sure: number } {
+  const pw = Math.max(5, Math.round(w * (opts.patchW ?? 0.045)) | 1);
+  const ph = Math.max(7, Math.round(h * (opts.patchH ?? 0.12)) | 1);
+  const [wts, wsum] = weights(pw, ph);
+  const tpl = cut(src, w, h, at.x * w, at.y * h, pw, ph);
+  const base = Math.max(200, contrastOf(tpl));
+  const step = 2;
+  let best = { x: at.x * w, y: at.y * h, s: Infinity };
+  // Second best well away from the best, to judge how sure the guess is.
+  const found: { x: number; y: number; s: number }[] = [];
+  for (let y = ph >> 1; y < h - (ph >> 1); y += step) {
+    for (let x = pw >> 1; x < w - (pw >> 1); x += step) {
+      const raw = score(dst, w, h, tpl, wts, wsum, x, y, Infinity);
+      const dx = x / w - at.x;
+      const dy = y / h - at.y;
+      const s = raw * (1 + 1.5 * Math.hypot(dx, dy * 1.5));
+      found.push({ x, y, s });
+      if (s < best.s) best = { x, y, s };
+    }
+  }
+  // Refine around the best at full resolution.
+  for (let y = best.y - step; y <= best.y + step; y++) {
+    for (let x = best.x - step; x <= best.x + step; x++) {
+      const raw = score(dst, w, h, tpl, wts, wsum, x, y, Infinity);
+      const s = raw * (1 + 1.5 * Math.hypot(x / w - at.x, (y / h - at.y) * 1.5));
+      if (s < best.s) best = { x, y, s };
+    }
+  }
+  let second = Infinity;
+  for (const f of found) if (Math.abs(f.x - best.x) > pw * 1.5 || Math.abs(f.y - best.y) > ph * 1.2) second = Math.min(second, f.s);
+  const match = Math.max(0, 1 - best.s / (base * 2));
+  const unique = second === Infinity ? 1 : Math.max(0, Math.min(1, (second - best.s) / Math.max(1, second)));
+  return { x: best.x / w, y: best.y / h, sure: Math.round(match * Math.min(1, unique * 3) * 100) / 100 };
+}

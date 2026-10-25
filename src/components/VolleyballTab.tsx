@@ -71,6 +71,16 @@ export function VolleyballTab() {
         ))}
       </div>
 
+      <button className="vb-hero vb-match" onClick={() => useEditor.setState({ quick: {} })}>
+        <span className="vb-hero-art" aria-hidden="true">
+          <Icon name="wand" size={30} />
+        </span>
+        <span>
+          <strong>Game to reel</strong>
+          <small>A whole game into a finished reel: the best rallies, your player followed, titles and music.</small>
+        </span>
+        <Icon name="chevronRight" />
+      </button>
       <button className="vb-hero vb-match" onClick={() => useEditor.setState({ match: {} })}>
         <span className="vb-hero-art" aria-hidden="true">
           <Icon name="film" size={30} />

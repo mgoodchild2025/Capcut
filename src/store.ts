@@ -35,6 +35,8 @@ export interface EditorState {
   posters: { kind?: import('./templates/posters').PosterKind } | null;
   /** Highlight reel wizard; `style` preselects a template. */
   wizard: { style?: import('./templates/reel').ReelStyle; clips?: import('./templates/reel').ReelClip[] } | null;
+  /** Game to reel: a whole game into a finished reel in a few taps. */
+  quick: Record<string, never> | null;
   /** The match screen: a game video's rallies. */
   match: { assetId?: string } | null;
   /** Telestrator pen: drawing on the selected telestrator graphic in the preview. */
@@ -106,6 +108,7 @@ export const useEditor = create<EditorState>(() => ({
   wizard: null,
   posters: null,
   match: null,
+  quick: null,
   showStats: statsOn(),
   draw: null,
 }));

@@ -116,6 +116,24 @@ export function Home() {
           </h2>
           <p>Drop in game footage. AI finds the best rallies, then we build the reel: titles, spotlights, music and all.</p>
         </div>
+        <button
+          className="poster-banner g2r-banner"
+          onClick={() => {
+            newProject(1080, 1920);
+            useEditor.setState({ quick: {}, leftTab: 'volleyball' });
+          }}
+        >
+          <span className="poster-banner-art" aria-hidden="true">
+            <Icon name="wand" size={26} />
+          </span>
+          <span>
+            <strong>Game to reel</strong>
+            <small>Drop in a whole game. ClipForge finds every rally, keeps the best, follows your player and builds the reel: titles, music and all.</small>
+          </span>
+          <span className="tpl-go">
+            Start <Icon name="chevronRight" size={16} />
+          </span>
+        </button>
         <button className="poster-banner" onClick={() => useEditor.setState({ posters: {} })}>
           <span className="poster-banner-art" aria-hidden="true">
             <Icon name="image" size={26} />

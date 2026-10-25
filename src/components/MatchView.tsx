@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addRalliesToTimeline, analyzeMatchIn, reelFromRallies, updateRally } from '../actions';
-import type { MatchRally, RallyAction } from '../model/types';
+import { addRalliesToTimeline, analyzeMatchIn, playlistToReel, playlistToTimeline, reelFromRallies, savePlaylist, updatePlaylist, updateRally } from '../actions';
+import type { MatchRally, PlaylistItem, RallyAction } from '../model/types';
 import { ralliesWith, scoreMatch } from '../stats/matchStats';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatDuration } from '../utils';
-import { isVolley, StatsPanel, TagPad } from './MatchStats';
+import { isVolley, StatsPanel, SummaryCard, TagPad } from './MatchStats';
 
 /**
  * A full game, point by point: every rally found in the video, to watch one at a time or back to
@@ -15,6 +15,7 @@ export function MatchView() {
   const assets = useEditor((s) => s.assets);
   const matches = useEditor((s) => s.project.matches);
   const task = useEditor((s) => s.task);
+  const playlists = useEditor((s) => s.project.playlists);
   const videos = Object.values(assets).filter((a) => a.kind === 'video' && !a.internal && !/reversed/.test(a.name));
   const [assetId, setAssetId] = useState<string>(() => useEditor.getState().match?.assetId ?? videos.slice().sort((a, b) => b.duration - a.duration)[0]?.id ?? '');
   const asset = assets[assetId];
@@ -23,7 +24,16 @@ export function MatchView() {
   const score = useMemo(() => (match ? scoreMatch(match, isVolley(match)) : null), [match]);
   const scoreOf = useMemo(() => new Map((score?.rallies ?? []).map((s) => [s.rallyId, s])), [score]);
   const [tagPlayer, setTagPlayer] = useState<string | null>(null);
-  const [tab, setTab] = useState<'rallies' | 'stats'>('rallies');
+  const [tab, setTab] = useState<'rallies' | 'stats' | 'playlists'>('rallies');
+  const [showSummary, setShowSummary] = useState(false);
+  // Saving moments to a playlist: the name being typed.
+  const [naming, setNaming] = useState<string | null>(null);
+  // Playing a playlist: which one and where in it.
+  const [pl, setPl] = useState<{ id: string; i: number } | null>(null);
+  const plList = playlists?.find((x) => x.id === pl?.id);
+  const plItem = pl && plList ? plList.items[pl.i] : undefined;
+  // A seek waiting for the video (another game's) to load.
+  const pending = useRef<{ t: number; play: boolean } | null>(null);
   // Watching a stat: just the rallies behind it.
   const [filter, setFilter] = useState<{ title: string; ids: string[] } | null>(null);
   const rallies = useMemo(() => (filter ? all.filter((r) => filter.ids.includes(r.id)) : all), [all, filter]);
@@ -51,25 +61,38 @@ export function MatchView() {
   const analysing = task?.label === 'Analysing the match';
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !analysing && close();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !analysing && naming === null && close();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
   // Play a rally from its start; at its end, stop (or move on to the next one when playing all).
+  const seek = (url: string, t: number, play: boolean) => {
+    const v = video.current;
+    if (!v) return;
+    if (v.src === url && v.readyState >= 1) {
+      v.currentTime = t;
+      if (play) void v.play().catch(() => {});
+    } else pending.current = { t, play };
+  };
   const go = (r: MatchRally | undefined, play = true) => {
     const v = video.current;
-    if (!r || !v) return;
+    if (!r || !v || !asset) return;
+    setPl(null);
     setCurrent(r.id);
-    v.currentTime = r.start;
-    if (play) void v.play().catch(() => {});
+    seek(asset.url, r.start, play);
     listRef.current?.querySelector(`[data-id="${r.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
   useEffect(() => {
     const v = video.current;
     if (!v) return;
     const tick = () => {
-      if (!cur || v.paused) return;
+      if (v.paused) return;
+      if (pl) {
+        if (plItem && v.currentTime >= plItem.end) playItem(pl.id, pl.i + 1);
+        return;
+      }
+      if (!cur) return;
       if (v.currentTime >= cur.end) {
         if (playAll && idx + 1 < rallies.length) go(rallies[idx + 1]);
         else {
@@ -82,6 +105,39 @@ export function MatchView() {
     return () => v.removeEventListener('timeupdate', tick);
   });
 
+  const loaded = () => {
+    const v = video.current;
+    const p = pending.current;
+    if (!v || !p) return;
+    pending.current = null;
+    v.currentTime = p.t;
+    if (p.play) void v.play().catch(() => {});
+  };
+  // Plays item `i` of a playlist, from whichever game it is in; past the end, stops.
+  const playItem = (id: string, i: number) => {
+    const list = playlists?.find((x) => x.id === id);
+    const it = list?.items[i];
+    const a = it && assets[it.assetId];
+    if (!it || !a) {
+      video.current?.pause();
+      setPl(null);
+      return;
+    }
+    setCurrent(null);
+    setTab('playlists');
+    setPl({ id, i });
+    seek(a.url, it.start, true);
+  };
+  const itemsOf = (ids: string[]): PlaylistItem[] =>
+    all
+      .filter((r) => ids.includes(r.id))
+      .map((r) => ({ assetId, start: r.start, end: r.end, rallyId: r.id, label: `${asset?.name.replace(/\.[^.]+$/, '') ?? 'Game'} · #${all.indexOf(r) + 1}` }));
+  const toSave = picked.length ? picked : filter ? filter.ids : [];
+  const saveTo = (name: string) => {
+    savePlaylist(name, itemsOf(toSave));
+    setNaming(null);
+    setPicked([]);
+  };
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const nudge = (r: MatchRally, edge: 'start' | 'end', d: number) => {
     const v = Math.max(0, Math.min(asset?.duration ?? Infinity, r[edge] + d));
@@ -116,7 +172,7 @@ export function MatchView() {
           ) : (
             <>
               <section className="match-player">
-                <video ref={video} src={asset.url} playsInline controls={false} onClick={() => (video.current?.paused ? void video.current.play() : video.current?.pause())} />
+                <video ref={video} src={(plItem && assets[plItem.assetId]?.url) || asset.url} onLoadedMetadata={loaded} playsInline controls={false} onClick={() => (video.current?.paused ? void video.current.play() : video.current?.pause())} />
                 <div className="match-transport">
                   <button className="icon-btn" aria-label="Previous rally" disabled={idx <= 0} onClick={() => go(rallies[idx - 1])}>
                     <Icon name="stepBack" size={16} />
@@ -190,9 +246,29 @@ export function MatchView() {
                     <button role="tab" aria-selected={tab === 'stats'} className={tab === 'stats' ? 'on' : ''} onClick={() => setTab('stats')}>
                       Stats
                     </button>
+                    <button role="tab" aria-selected={tab === 'playlists'} className={tab === 'playlists' ? 'on' : ''} onClick={() => setTab('playlists')}>
+                      Playlists{playlists?.length ? ` (${playlists.length})` : ''}
+                    </button>
                   </div>
                 )}
-                {tab === 'stats' && match && score && <StatsPanel match={match} score={score} watch={watch} />}
+                {tab === 'stats' && match && score && (
+                  <>
+                    {(match.rallies.some((r) => r.won || r.actions?.length)) && (
+                      <button className={`btn summary-toggle ${showSummary ? 'on' : ''}`} aria-expanded={showSummary} onClick={() => setShowSummary((x) => !x)}>
+                        <Icon name="image" /> Game summary for families
+                      </button>
+                    )}
+                    {showSummary && <SummaryCard match={match} />}
+                    <StatsPanel match={match} score={score} watch={watch} />
+                  </>
+                )}
+                {tab === 'playlists' && (
+                  <Playlists
+                    playing={pl}
+                    play={playItem}
+                    onDone={close}
+                  />
+                )}
                 {filter && tab === 'rallies' && (
                   <div className="watch-filter">
                     <span>
@@ -290,8 +366,50 @@ export function MatchView() {
           )}
         </div>
         <footer className="wiz-foot">
-          <span className="wiz-summary">{picked.length ? `${picked.length} picked` : match ? 'Tick rallies to use them' : asset ? asset.name : ''}</span>
+          {naming !== null ? (
+            <form
+              className="pl-name"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveTo(naming);
+              }}
+            >
+              <input
+                className="text-input"
+                autoFocus
+                value={naming}
+                onChange={(e) => setNaming(e.target.value)}
+                list="pl-names"
+                aria-label="Playlist name"
+                placeholder="Playlist name"
+                onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), setNaming(null))}
+              />
+              <datalist id="pl-names">
+                {playlists?.map((x) => (
+                  <option key={x.id} value={x.name} />
+                ))}
+              </datalist>
+              <button className="btn primary" type="submit" disabled={!naming.trim()}>
+                Save {toSave.length}
+              </button>
+              <button className="btn" type="button" onClick={() => setNaming(null)}>
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <span className="wiz-summary">{picked.length ? `${picked.length} picked` : match ? 'Tick rallies to use them' : asset ? asset.name : ''}</span>
+          )}
           <div className="wiz-actions">
+            {naming === null && (
+              <button
+                className="btn pl-save"
+                disabled={!toSave.length}
+                onClick={() => setNaming(filter && !picked.length ? filter.title : (playlists?.[playlists.length - 1]?.name ?? 'Highlights'))}
+                title="Keep these moments in a playlist: for teaching, or the best of the season"
+              >
+                <Icon name="star" /> Save to playlist
+              </button>
+            )}
             <button className="btn" disabled={!picked.length} onClick={() => (addRalliesToTimeline(assetId, picked), close())}>
               <Icon name="plus" /> Add to timeline
             </button>
@@ -302,5 +420,96 @@ export function MatchView() {
         </footer>
       </div>
     </div>
+  );
+}
+
+/** Saved playlists: moments from any game, to watch back to back, reorder, or make into a reel. */
+function Playlists({ playing, play, onDone }: { playing: { id: string; i: number } | null; play: (id: string, i: number) => void; onDone: () => void }) {
+  const playlists = useEditor((s) => s.project.playlists) ?? [];
+  const assets = useEditor((s) => s.assets);
+  const matches = useEditor((s) => s.project.matches);
+  const [open, setOpen] = useState<string | null>(playing?.id ?? null);
+  if (!playlists.length)
+    return (
+      <p className="wiz-lede">
+        Tick rallies (or watch a stat), then <b>Save to playlist</b>: a teaching reel of one skill, a player's best moments, the season's top plays. Playlists can take moments from
+        every game you've analysed.
+      </p>
+    );
+  const move = (id: string, items: PlaylistItem[], i: number, d: number) => {
+    const j = i + d;
+    if (j < 0 || j >= items.length) return;
+    const next = items.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    updatePlaylist(id, { items: next });
+  };
+  return (
+    <ul className="playlists">
+      {playlists.map((p) => {
+        const len = p.items.reduce((s, it) => s + it.end - it.start, 0);
+        const games = new Set(p.items.map((it) => it.assetId)).size;
+        const expanded = open === p.id;
+        return (
+          <li key={p.id} className={`playlist ${playing?.id === p.id ? 'playing' : ''}`}>
+            <div className="pl-head">
+              <button className="pl-title" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : p.id)}>
+                <strong>{p.name}</strong>
+                <small>
+                  {p.items.length} clip{p.items.length === 1 ? '' : 's'} · {formatDuration(len)}
+                  {games > 1 ? ` · ${games} games` : ''}
+                </small>
+              </button>
+              <button className="btn" disabled={!p.items.length} onClick={() => play(p.id, 0)}>
+                <Icon name="play" /> Play
+              </button>
+            </div>
+            {expanded && (
+              <>
+                <input className="text-input pl-rename" aria-label="Playlist name" defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && updatePlaylist(p.id, { name: e.target.value.trim() })} />
+                <ol className="pl-items">
+                  {p.items.map((it, i) => {
+                    const thumb = it.rallyId ? matches?.[it.assetId]?.rallies.find((r) => r.id === it.rallyId)?.thumb : undefined;
+                    const missing = !assets[it.assetId];
+                    return (
+                      <li key={`${it.assetId}-${it.start}-${i}`} className={playing?.id === p.id && playing.i === i ? 'current' : ''}>
+                        <button className="pl-item" disabled={missing} onClick={() => play(p.id, i)}>
+                          <span className="rally-thumb">{thumb && <img src={thumb} alt="" />}</span>
+                          <span>
+                            <strong>{it.label ?? `Clip ${i + 1}`}</strong>
+                            <small>{missing ? 'Video missing' : `${formatDuration(it.start)} · ${Math.round(it.end - it.start)}s`}</small>
+                          </span>
+                        </button>
+                        <span className="pl-item-tools">
+                          <button className="mini" aria-label="Move up" disabled={i === 0} onClick={() => move(p.id, p.items, i, -1)}>
+                            ↑
+                          </button>
+                          <button className="mini" aria-label="Move down" disabled={i === p.items.length - 1} onClick={() => move(p.id, p.items, i, 1)}>
+                            ↓
+                          </button>
+                          <button className="mini" aria-label="Remove from playlist" onClick={() => updatePlaylist(p.id, { items: p.items.filter((_, k) => k !== i) })}>
+                            ×
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="pl-actions">
+                  <button className="btn" disabled={!p.items.length} onClick={() => (playlistToTimeline(p.id), onDone())}>
+                    <Icon name="plus" /> Add to timeline
+                  </button>
+                  <button className="btn primary" disabled={!p.items.length} onClick={() => playlistToReel(p.id)}>
+                    <Icon name="wand" /> Make a reel
+                  </button>
+                  <button className="link-btn danger" onClick={() => confirm(`Delete "${p.name}"? The games and rallies stay.`) && updatePlaylist(p.id, null)}>
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

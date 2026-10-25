@@ -294,3 +294,43 @@ export function ralliesWith(m: MatchData, test: (a: RallyAction) => boolean): Ma
 
 /** "0.315" style, as volleyball prints hitting percentage; a dash with no attempts. */
 export const pct3 = (v: number | null) => (v === null ? '–' : `${v < 0 ? '-' : ''}.${String(Math.round(Math.abs(v) * 1000)).padStart(3, '0')}`.replace('.1000', '1.000'));
+
+export interface Leader {
+  label: string;
+  value: string;
+  player: string;
+}
+
+/** Who led the team: the top player in each headline stat (volleyball), or in each play (other sports). */
+export function gameLeaders(m: MatchData, volley: boolean): Leader[] {
+  const top = (lines: [string, number][], label: string, show = (v: number) => String(v)): Leader | null => {
+    const best = lines.reduce<[string, number] | null>((b, x) => (x[1] > (b?.[1] ?? 0) ? x : b), null);
+    return best ? { label, value: show(best[1]), player: best[0] } : null;
+  };
+  if (!volley) {
+    const counts = playCounts(m);
+    const plays = [...new Set([...counts.values()].flatMap((c) => [...c.keys()]))];
+    return plays
+      .map((k) => top([...counts].map(([p, c]) => [p, c.get(k) ?? 0]), k))
+      .filter((l): l is Leader => !!l)
+      .slice(0, 5);
+  }
+  const lines = [...volleyStats(m).players];
+  const of = (f: (l: VolleyLine) => number): [string, number][] => lines.map(([p, l]) => [p, f(l)]);
+  return [
+    top(of((l) => l.kills), 'Kills'),
+    top(of((l) => l.aces), 'Aces'),
+    top(of((l) => l.blockSolos + l.blockAssists / 2), 'Blocks'),
+    top(of((l) => l.digs), 'Digs'),
+    top(of((l) => l.assists), 'Assists'),
+  ].filter((l): l is Leader => !!l);
+}
+
+/** The final score in a line: sets won (and each set), or points. `partial` when the game is only partly tagged. */
+export function finalScore(score: MatchScore, volley: boolean): { us: number; them: number; sets: [number, number][]; partial: boolean } {
+  const played = score.sets.filter(([a, b]) => a + b > 0);
+  // A single unfinished set reads better as its points.
+  if (volley && (score.won[0] + score.won[1] > 0 || played.length !== 1)) return { us: score.won[0], them: score.won[1], sets: played, partial: false };
+  const [us, them] = played.reduce<[number, number]>(([x, y], [a, b]) => [x + a, y + b], [0, 0]);
+  return { us, them, sets: [], partial: volley };
+}

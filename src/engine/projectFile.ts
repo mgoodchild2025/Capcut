@@ -64,7 +64,7 @@ export async function draftToFile(id: string): Promise<File> {
 
 export function packProject(raw: { project: Project; thumbnail?: string; assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] }): File {
   // Only media the timeline uses (clips, and what graphics draw) and analysed games; deleted clips can leave orphans behind.
-  const used = new Set([...raw.project.clips.flatMap(mediaRefs), ...Object.keys(raw.project.matches ?? {})]);
+  const used = new Set([...raw.project.clips.flatMap(mediaRefs), ...Object.keys(raw.project.matches ?? {}), ...(raw.project.playlists ?? []).flatMap((pl) => pl.items.map((it) => it.assetId))]);
   const assets = raw.assets.filter((a) => used.has(a.meta.id));
   const header: Header = {
     app: 'ClipForge',
@@ -116,6 +116,7 @@ export async function importProjectFile(file: Blob): Promise<string> {
     updatedAt: now,
     clips: project.clips.map((c) => remapClip(c, (id) => ids.get(id) ?? id)),
     matches: remapMatches(project.matches, (id) => ids.get(id) ?? id),
+    playlists: project.playlists?.map((pl) => ({ ...pl, items: pl.items.map((it) => ({ ...it, assetId: ids.get(it.assetId) ?? it.assetId })) })),
   };
   await saveDraftRaw(
     next,

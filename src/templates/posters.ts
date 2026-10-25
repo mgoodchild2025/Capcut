@@ -2,7 +2,8 @@
  * Still graphics for social posts: the broadcast package's titles and boards, captured once
  * they've finished building, at the sizes Instagram, TikTok and X want.
  */
-import type { GraphicSpec } from '../model/types';
+import type { GraphicSpec, MatchData } from '../model/types';
+import { finalScore, gameLeaders, pct3, scoreMatch, volleyStats } from '../stats/matchStats';
 import { opponentColors, titleGraphic } from './broadcast';
 import { playedSets, sides } from './match';
 import type { ReelInfo } from './reel';
@@ -130,4 +131,35 @@ export function posterFileName(kind: PosterKind, format: PosterFormat, info: Ree
   const who = (POSTER_KINDS.find((k) => k.id === kind)!.subject === 'player' ? info.name : teamOf(info) || info.name).trim() || 'poster';
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   return `${slug(who)}-${slug(POSTER_KINDS.find((k) => k.id === kind)!.title)}-${format}.png`;
+}
+
+/** The one-image game summary for families: final score, set by set, and the team's leaders. */
+export function summarySpec(m: MatchData, volley: boolean, info: ReelInfo, has: { logo?: boolean; opp?: boolean }, sub = ''): GraphicSpec {
+  const usName = m.us?.trim() || teamOf(info) || 'Us';
+  const themName = m.them?.trim() || info.opponent?.trim() || 'Them';
+  const fs = finalScore(scoreMatch(m, volley), volley);
+  const result = fs.partial ? '' : fs.us > fs.them ? `${usName} win` : fs.us < fs.them ? `${themName} win` : '';
+  const leaders = gameLeaders(m, volley);
+  const who = new Map((m.players ?? []).map((p) => [p.key, p]));
+  let footer = '';
+  if (volley) {
+    const st = volleyStats(m);
+    const pct = ([w, n]: [number, number]) => (n ? `${Math.round((w / n) * 100)}%` : '');
+    const n = (v: number, one: string) => `${v} ${one}${v === 1 ? '' : 's'}`;
+    footer = [st.team.attempts && `Hitting ${pct3(st.team.hitting)}`, n(st.team.aces, 'ace'), n(st.team.digs, 'dig'), pct(st.sideout) && `Sideout ${pct(st.sideout)}`].filter(Boolean).join('   ·   ');
+  }
+  return {
+    type: 'summary',
+    colors: info.colors,
+    look: info.look,
+    logo: has.logo ? POSTER_IMAGES.logo : undefined,
+    oppLogo: has.opp ? POSTER_IMAGES.opp : undefined,
+    sets: fs.sets,
+    rows: leaders.map((l) => [l.label, l.value]),
+    players: leaders.map((l) => {
+      const p = who.get(l.player);
+      return { number: p?.number.replace('#', '') ?? '', name: p?.name ?? l.player };
+    }),
+    text: { usName, themName, usScore: String(fs.us), themScore: String(fs.them), result, sub, footer, kicker: fs.partial ? 'Game summary' : 'Final' },
+  };
 }

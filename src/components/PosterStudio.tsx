@@ -10,7 +10,7 @@ import { Icon } from '../ui/Icon';
 import { AWARDS, ColorPairs, HEADLINES, LOOKS, LogoDrop, loadInfo, parseRoster, positionsWith, STORE_KEY, withSport } from './ReelWizard';
 
 /** Loads an image from a URL as state, for drawing. */
-function useImg(url?: string) {
+export function useImg(url?: string) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
     let live = true;

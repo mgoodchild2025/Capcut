@@ -1317,3 +1317,39 @@ export function setMatchInfo(assetId: string, patch: Partial<Pick<import('./mode
     return m ? { ...p, matches: { ...p.matches, [assetId]: { ...m, ...patch } } } : p;
   });
 }
+
+// ---------- playlists ----------
+
+/** Saves moments (rallies of any games) to a playlist: a new one, or added to the one with that name. */
+export function savePlaylist(name: string, items: import('./model/types').PlaylistItem[]): string {
+  const title = name.trim() || 'Playlist';
+  const existing = get().project.playlists?.find((x) => x.name.toLowerCase() === title.toLowerCase());
+  const id = existing?.id ?? newId('pl_');
+  const fresh = existing ? items.filter((it) => !existing.items.some((o) => o.assetId === it.assetId && Math.abs(o.start - it.start) < 0.5)) : items;
+  edit((p) => ({
+    ...p,
+    playlists: existing ? (p.playlists ?? []).map((x) => (x.id === id ? { ...x, items: [...x.items, ...fresh] } : x)) : [...(p.playlists ?? []), { id, name: title, items }],
+  }));
+  toast(existing ? `Added ${fresh.length} to "${existing.name}"` : `Saved "${title}" (${items.length} clip${items.length === 1 ? '' : 's'})`);
+  return id;
+}
+
+export function updatePlaylist(id: string, patch: Partial<import('./model/types').Playlist> | null) {
+  edit((p) => ({ ...p, playlists: patch === null ? (p.playlists ?? []).filter((x) => x.id !== id) : (p.playlists ?? []).map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+}
+
+/** A playlist on the timeline, in its order. */
+export function playlistToTimeline(id: string) {
+  const pl = get().project.playlists?.find((x) => x.id === id);
+  if (!pl) return;
+  const assets = get().assets;
+  edit((p) => pl.items.reduce((next, it) => (assets[it.assetId] ? appendToMain(next, { ...createMediaClip(assets[it.assetId]), inPoint: it.start, duration: it.end - it.start }) : next), p));
+  toast(`Added "${pl.name}" to the timeline`);
+}
+
+/** A playlist into the reel wizard, its clips already picked. */
+export function playlistToReel(id: string) {
+  const pl = get().project.playlists?.find((x) => x.id === id);
+  if (!pl) return;
+  useEditor.setState({ match: null, wizard: { clips: pl.items.map((it) => ({ assetId: it.assetId, inPoint: it.start, duration: it.end - it.start })) }, leftTab: 'volleyball' });
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { MatchData, MatchRally, RallyAction } from '../model/types';
-import { pct3, playCounts, pointOf, ralliesWith, scoreMatch, volleyStats } from './matchStats';
+import { summarySpec } from '../templates/posters';
+import { BLANK } from '../components/ReelWizard';
+import { finalScore, gameLeaders, pct3, playCounts, pointOf, ralliesWith, scoreMatch, volleyStats } from './matchStats';
 
 let n = 0;
 const act = (player: string | undefined, skill: string, result: string): RallyAction => ({ id: `a${n++}`, player, skill, result });
@@ -101,5 +103,52 @@ describe('other sports', () => {
     const c = playCounts({ assetId: 'a', analyzedAt: 0, rallies: [rally(0, 'us', [act('p1', 'Goal', 'done'), act('p2', 'Assist', 'done')]), rally(1, 'us', [act('p1', 'Goal', 'done')])] });
     expect(c.get('p1')!.get('Goal')).toBe(2);
     expect(c.get('p2')!.get('Assist')).toBe(1);
+  });
+});
+
+describe('the game summary', () => {
+  const kills = (p: string, k: number) => Array.from({ length: k }, () => act(p, 'attack', 'kill'));
+  const m: MatchData = {
+    assetId: 'a',
+    analyzedAt: 0,
+    us: 'Eagles',
+    them: 'Hawks',
+    players: [
+      { key: 'p1', number: '7', name: 'Ava Smith', position: 'OH' },
+      { key: 'p2', number: '#3', name: 'Mia Jones', position: 'S' },
+    ],
+    rallies: [
+      rally(0, 'us', [...kills('p1', 3), ...kills('p2', 1)]),
+      rally(1, 'us', [act('p2', 'serve', 'ace'), act('p2', 'set', 'assist')]),
+      rally(2, 'them', [act('p1', 'dig', 'dig')]),
+    ],
+  };
+
+  it('names the top player in each stat, skipping stats nobody recorded', () => {
+    const l = gameLeaders(m, true);
+    expect(l.map((x) => [x.label, x.value, x.player])).toEqual([
+      ['Kills', '3', 'p1'],
+      ['Aces', '1', 'p2'],
+      ['Digs', '1', 'p1'],
+      ['Assists', '1', 'p2'],
+    ]);
+    expect(gameLeaders(m, false)[0]).toMatchObject({ label: 'attack', value: '3', player: 'p1' });
+  });
+
+  it('reads a partly tagged first set as points, and finished sets as sets won', () => {
+    expect(finalScore(scoreMatch(m), true)).toEqual({ us: 2, them: 1, sets: [], partial: true });
+    const sets = finalScore({ rallies: [], sets: [[25, 20], [22, 25], [25, 18], [0, 0]], won: [2, 1] }, true);
+    expect(sets).toEqual({ us: 2, them: 1, sets: [[25, 20], [22, 25], [25, 18]], partial: false });
+    expect(finalScore({ rallies: [], sets: [[3, 1]], won: [0, 0] }, false)).toEqual({ us: 3, them: 1, sets: [], partial: false });
+  });
+
+  it('builds the summary graphic with the leaders and the result', () => {
+    const g = summarySpec(m, true, BLANK, {});
+    expect(g.type).toBe('summary');
+    expect(g.text).toMatchObject({ usName: 'Eagles', themName: 'Hawks', usScore: '2', themScore: '1', result: '', kicker: 'Game summary' });
+    expect(g.rows?.[0]).toEqual(['Kills', '3']);
+    expect(g.players?.[0]).toEqual({ number: '7', name: 'Ava Smith' });
+    expect(g.players?.[1]).toEqual({ number: '3', name: 'Mia Jones' });
+    expect(g.text.footer).toMatch(/Hitting 1\.000 .* 1 ace .* 1 dig/);
   });
 });

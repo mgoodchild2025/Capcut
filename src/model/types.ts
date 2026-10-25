@@ -289,6 +289,8 @@ export interface Project {
   poster?: number;
   /** Full games analysed into rallies, by video asset id. */
   matches?: Record<string, MatchData>;
+  /** Teaching and highlight playlists built from the matches. */
+  playlists?: Playlist[];
 }
 
 /** One point of a match, found by analysing the game video (source seconds). */
@@ -306,6 +308,28 @@ export interface MatchRally {
   whistleEnd?: number;
   /** Small frame at the peak (JPEG data URL). */
   thumb?: string;
+  /** Who won the point (tagged). */
+  won?: 'us' | 'them';
+  /** What happened, in order (tagged). */
+  actions?: RallyAction[];
+}
+
+/** One tagged touch: who (a roster key; none for the other team) did what, and how it went. */
+export interface RallyAction {
+  id: string;
+  player?: string;
+  /** Volleyball: serve, pass, set, attack, block, dig. Other sports: one of the sport's plays. */
+  skill: string;
+  /** How it went, e.g. "kill", "ace", "error", "3" (a perfect pass). */
+  result: string;
+}
+
+/** A player in a tagged match (a copy of the roster at the time). */
+export interface MatchPlayer {
+  key: string;
+  number: string;
+  name: string;
+  position: string;
 }
 
 /** A full game analysed into its rallies. */
@@ -313,4 +337,17 @@ export interface MatchData {
   assetId: string;
   analyzedAt: number;
   rallies: MatchRally[];
+  /** Tagging: the teams, our players and who served first. */
+  us?: string;
+  them?: string;
+  players?: MatchPlayer[];
+  serveFirst?: 'us' | 'them';
+  sport?: string;
+}
+
+/** A named list of moments from any games, to watch back or turn into a video. */
+export interface Playlist {
+  id: string;
+  name: string;
+  items: { assetId: string; start: number; end: number; label?: string }[];
 }

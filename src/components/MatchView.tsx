@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { addRalliesToTimeline, analyzeMatchIn, reelFromRallies, updateRally } from '../actions';
-import type { MatchRally } from '../model/types';
+import type { MatchRally, RallyAction } from '../model/types';
+import { ralliesWith, scoreMatch } from '../stats/matchStats';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatDuration } from '../utils';
+import { isVolley, StatsPanel, TagPad } from './MatchStats';
 
 /**
  * A full game, point by point: every rally found in the video, to watch one at a time or back to
@@ -17,7 +19,14 @@ export function MatchView() {
   const [assetId, setAssetId] = useState<string>(() => useEditor.getState().match?.assetId ?? videos.slice().sort((a, b) => b.duration - a.duration)[0]?.id ?? '');
   const asset = assets[assetId];
   const match = matches?.[assetId];
-  const rallies = useMemo(() => (match?.rallies ?? []).slice().sort((a, b) => a.start - b.start), [match]);
+  const all = useMemo(() => (match?.rallies ?? []).slice().sort((a, b) => a.start - b.start), [match]);
+  const score = useMemo(() => (match ? scoreMatch(match, isVolley(match)) : null), [match]);
+  const scoreOf = useMemo(() => new Map((score?.rallies ?? []).map((s) => [s.rallyId, s])), [score]);
+  const [tagPlayer, setTagPlayer] = useState<string | null>(null);
+  const [tab, setTab] = useState<'rallies' | 'stats'>('rallies');
+  // Watching a stat: just the rallies behind it.
+  const [filter, setFilter] = useState<{ title: string; ids: string[] } | null>(null);
+  const rallies = useMemo(() => (filter ? all.filter((r) => filter.ids.includes(r.id)) : all), [all, filter]);
   const [current, setCurrent] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [playAll, setPlayAll] = useState(false);
@@ -31,6 +40,14 @@ export function MatchView() {
   const idx = rallies.findIndex((r) => r.id === current);
   const cur = idx >= 0 ? rallies[idx] : null;
   const shown = sort === 'best' ? rallies.slice().sort((a, b) => b.score - a.score) : rallies;
+  const watch = (title: string, test: (a: RallyAction) => boolean) => {
+    if (!match) return;
+    const found = ralliesWith(match, test);
+    setFilter({ title, ids: found.map((r) => r.id) });
+    setTab('rallies');
+    setPlayAll(true);
+    setTimeout(() => go(found[0]), 0);
+  };
   const analysing = task?.label === 'Analysing the match';
 
   useEffect(() => {
@@ -150,71 +167,124 @@ export function MatchView() {
                     </button>
                   </div>
                 )}
+                {cur && match && tab === 'rallies' && (
+                  <TagPad
+                    key={cur.id}
+                    assetId={assetId}
+                    match={match}
+                    rally={cur}
+                    score={scoreOf.get(cur.id)}
+                    onNext={() => go(rallies[idx + 1], true)}
+                    player={tagPlayer}
+                    setPlayer={setTagPlayer}
+                  />
+                )}
               </section>
 
               <section className="match-list">
-                <div className="match-list-head">
-                  {match ? (
-                    <>
-                      <strong>
-                        {rallies.length} rallies · {formatDuration(total)} of play
-                      </strong>
-                      <div className="segmented" role="radiogroup" aria-label="Order">
-                        <button role="radio" aria-checked={sort === 'time'} className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>
-                          In order
-                        </button>
-                        <button role="radio" aria-checked={sort === 'best'} className={sort === 'best' ? 'on' : ''} onClick={() => setSort('best')}>
-                          Best first
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="wiz-lede">Find every rally in this game: whistles, crowd and movement on court show where each point starts and ends.</p>
-                  )}
-                  <div className="match-list-actions">
-                    <button className={`btn ${match ? '' : 'primary'}`} disabled={!!task} onClick={() => void analyzeMatchIn(assetId).then((ok) => ok && setPicked([]))}>
-                      <Icon name="sparkle" /> {match ? 'Analyse again' : 'Find every rally'}
+                {match && (
+                  <div className="segmented match-tabs" role="tablist">
+                    <button role="tab" aria-selected={tab === 'rallies'} className={tab === 'rallies' ? 'on' : ''} onClick={() => setTab('rallies')}>
+                      Rallies
                     </button>
-                    {rallies.length > 0 && (
-                      <button className="btn" onClick={() => setPicked(rallies.slice().sort((a, b) => b.score - a.score).slice(0, 8).map((r) => r.id))}>
-                        <Icon name="star" /> Pick the best 8
-                      </button>
-                    )}
+                    <button role="tab" aria-selected={tab === 'stats'} className={tab === 'stats' ? 'on' : ''} onClick={() => setTab('stats')}>
+                      Stats
+                    </button>
                   </div>
-                </div>
+                )}
+                {tab === 'stats' && match && score && <StatsPanel match={match} score={score} watch={watch} />}
+                {filter && tab === 'rallies' && (
+                  <div className="watch-filter">
+                    <span>
+                      Watching <b>{filter.title}</b> ({filter.ids.length})
+                    </span>
+                    <button className="link-btn" onClick={() => (setFilter(null), setPlayAll(false))}>
+                      Show all rallies
+                    </button>
+                  </div>
+                )}
+                {tab === 'rallies' && (
+                  <div className="match-list-head">
+                    {match ? (
+                      <>
+                        <strong>
+                          {rallies.length} rallies · {formatDuration(total)} of play
+                        </strong>
+                        <div className="segmented" role="radiogroup" aria-label="Order">
+                          <button role="radio" aria-checked={sort === 'time'} className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>
+                            In order
+                          </button>
+                          <button role="radio" aria-checked={sort === 'best'} className={sort === 'best' ? 'on' : ''} onClick={() => setSort('best')}>
+                            Best first
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="wiz-lede">Find every rally in this game: whistles, crowd and movement on court show where each point starts and ends.</p>
+                    )}
+                    <div className="match-list-actions">
+                      <button className={`btn ${match ? '' : 'primary'}`} disabled={!!task} onClick={() => void analyzeMatchIn(assetId).then((ok) => ok && setPicked([]))}>
+                        <Icon name="sparkle" /> {match ? 'Analyse again' : 'Find every rally'}
+                      </button>
+                      {rallies.length > 0 && (
+                        <button
+                          className="btn"
+                          onClick={() =>
+                            setPicked(
+                              rallies
+                                .slice()
+                                .sort((a, b) => b.score - a.score)
+                                .slice(0, 8)
+                                .map((r) => r.id),
+                            )
+                          }
+                        >
+                          <Icon name="star" /> Pick the best 8
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {analysing && (
                   <div className="caption-progress">
                     <span>Listening for whistles and watching the court... {Math.round((task?.progress ?? 0) * 100)}%</span>
                     <div className="bar">
-                      <i style={{ width: `${Math.round((task?.progress ?? 0) * 100)}%` }} />
+                      <i
+                        style={{
+                          width: `${Math.round((task?.progress ?? 0) * 100)}%`,
+                        }}
+                      />
                     </div>
                   </div>
                 )}
-                <ol className="rally-list" ref={listRef}>
-                  {shown.map((r) => {
-                    const n = rallies.indexOf(r) + 1;
-                    const on = picked.includes(r.id);
-                    return (
-                      <li key={r.id} data-id={r.id} className={`rally ${current === r.id ? 'current' : ''}`}>
-                        <button className={`rally-pick ${on ? 'on' : ''}`} aria-pressed={on} aria-label={`Pick rally ${n}`} onClick={() => toggle(r.id)}>
-                          {on && <Icon name="check" size={14} />}
-                        </button>
-                        <button className="rally-main" onClick={() => go(r)}>
-                          <span className="rally-thumb">{r.thumb && <img src={r.thumb} alt="" />}</span>
-                          <span className="rally-meta">
-                            <strong>
-                              #{n} · {formatDuration(r.start)} · {Math.round(r.end - r.start)}s
-                            </strong>
-                            <small>{r.reasons.join(' · ') || 'Rally'}</small>
-                            <span className="hl-score">
-                              <i style={{ width: `${r.score}%` }} />
+                {tab === 'rallies' && (
+                  <ol className="rally-list" ref={listRef}>
+                    {shown.map((r) => {
+                      const n = rallies.indexOf(r) + 1;
+                      const on = picked.includes(r.id);
+                      return (
+                        <li key={r.id} data-id={r.id} className={`rally ${current === r.id ? 'current' : ''}`}>
+                          <button className={`rally-pick ${on ? 'on' : ''}`} aria-pressed={on} aria-label={`Pick rally ${n}`} onClick={() => toggle(r.id)}>
+                            {on && <Icon name="check" size={14} />}
+                          </button>
+                          <button className="rally-main" onClick={() => go(r)}>
+                            <span className="rally-thumb">{r.thumb && <img src={r.thumb} alt="" />}</span>
+                            <span className="rally-meta">
+                              <strong>
+                                #{all.indexOf(r) + 1} · {formatDuration(r.start)} · {Math.round(r.end - r.start)}s
+                                {r.won && <em className={`rally-won ${r.won}`}>{scoreOf.get(r.id)?.after.join('–')}</em>}
+                              </strong>
+                              <small>{r.reasons.join(' · ') || 'Rally'}</small>
+                              <span className="hl-score">
+                                <i style={{ width: `${r.score}%` }} />
+                              </span>
                             </span>
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
               </section>
             </>
           )}

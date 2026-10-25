@@ -116,6 +116,18 @@ export function Home() {
           </h2>
           <p>Drop in game footage. AI finds the best rallies, then we build the reel: titles, spotlights, music and all.</p>
         </div>
+        <button className="poster-banner" onClick={() => useEditor.setState({ posters: {} })}>
+          <span className="poster-banner-art" aria-hidden="true">
+            <Icon name="image" size={26} />
+          </span>
+          <span>
+            <strong>Graphics &amp; posters</strong>
+            <small>Game day, final score, victory, player spotlight, Play of the Week, college commitment, stats and lineup images, sized for Stories, posts and X.</small>
+          </span>
+          <span className="tpl-go">
+            Make one <Icon name="chevronRight" size={16} />
+          </span>
+        </button>
         <div className="tpl-cards">
           {REEL_STYLES.map((t, i) => (
             <button

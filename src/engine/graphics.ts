@@ -1005,6 +1005,27 @@ function drawPlayerCard(g: G) {
   }
   if (tx.count) label(g, tx.count, W - S * 0.05, S * 0.05, S * 0.026, 'rgba(255,255,255,0.7)', 'right', 700, 0.2);
   if (spec.logo && media) logoAt(g, spec.logo, S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 0.6, 1.0)));
+  // An occasion ("PLAYER OF THE GAME") on a plate: over the foot of the photo on a tall card, above the name on a wide one.
+  const kick = (tx.kicker || '').toUpperCase();
+  if (kick) {
+    const kp = eExpo(seg(t, 0.9, 1.35));
+    const ks = fit(ctx, kick, W * (portrait ? 0.62 : 0.36), S * (portrait ? 0.05 : 0.045), 900, SANS, 0.16);
+    font(ctx, ks, 900, SANS);
+    tracking(ctx, ks * 0.16);
+    const kw = ctx.measureText(kick).width + ks * 2.2;
+    tracking(ctx, 0);
+    const kx = portrait ? W / 2 - kw / 2 : W * 0.07;
+    // Tall: a banner across the foot of the photo, clear of the logo in the corner.
+    const ky = portrait ? H * 0.6 - ks * 1.7 : H * 0.13;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = soft(ks);
+    ctx.fillStyle = accent(g);
+    para(ctx, kx, ky - ks, kw * kp, ks * 2, ks * 0.45);
+    ctx.fill();
+    ctx.restore();
+    if (kp > 0.7) label(g, kick, kx + ks * 1.1, ky + ks * 0.05, ks, g.ink, 'left', 900, 0.16);
+  }
   panelWipe(g, seg(t, g.d - 0.45, g.d + 0.15));
 }
 
@@ -2142,6 +2163,98 @@ function drawBadge(g: G) {
   ctx.restore();
 }
 
+/**
+ * College commitment announcement: the player's photo (or cut-out), COMMITTED across it, their
+ * name and details, and the college's logo and name landing at the end.
+ */
+function drawCommit(g: G) {
+  const { ctx, W, H, S, t, portrait, spec, media } = g;
+  const tx = spec.text;
+  backdrop(g);
+  const cutout = !!spec.cutout && !!media && !(media instanceof HTMLVideoElement);
+  // Photo area: the top of a tall frame, the right of a wide one.
+  const box = portrait ? { x: 0, y: 0, w: W, h: H * 0.6 } : { x: W * 0.46, y: 0, w: W * 0.54, h: H };
+  const open = eExpo(seg(t, 0.05, 0.7));
+  if (media && open > 0) {
+    ctx.save();
+    if (cutout) {
+      const [iw, ih] = sizeOf(media);
+      const k = Math.min((box.w * 0.92) / iw, (box.h * 0.98) / ih) * lerp(1.05, 1, eOut(seg(t, 0, 2)));
+      const dw = iw * k;
+      const dh = ih * k;
+      ctx.globalAlpha = open;
+      ctx.shadowColor = rgba(g.c2, 0.85);
+      ctx.shadowBlur = soft(S * 0.05);
+      ctx.drawImage(media, box.x + (box.w - dw) / 2, box.y + box.h - dh + (1 - open) * H * 0.05, dw, dh);
+    } else {
+      ctx.beginPath();
+      ctx.rect(box.x + (portrait ? 0 : box.w * (1 - open)), box.y, box.w * (portrait ? 1 : open), box.h * (portrait ? open : 1));
+      ctx.clip();
+      cover(ctx, media, box.x, box.y, box.w, box.h, lerp(1.1, 1, eOut(seg(t, 0, 3))));
+      // Fade the photo into the backdrop where the words sit.
+      const gr = portrait ? ctx.createLinearGradient(0, box.h * 0.5, 0, box.h) : ctx.createLinearGradient(box.x, 0, box.x + box.w * 0.45, 0);
+      gr.addColorStop(portrait ? 0 : 1, 'rgba(0,0,0,0)');
+      gr.addColorStop(portrait ? 1 : 0, shade(g.c1, -0.8, 0.95));
+      ctx.fillStyle = gr;
+      ctx.fillRect(box.x, box.y, box.w, box.h);
+    }
+    ctx.restore();
+  } else if (!media) {
+    // No photo: the college crest takes the space.
+    crest(g, spec.oppLogo, tx.college || 'College', box.x + box.w / 2, box.y + box.h * 0.45, S * (portrait ? 0.5 : 0.45), 0.15);
+  }
+  streaks(g, box.y + box.h * 0.2, box.y + box.h * 0.9, 4, 0.3);
+
+  const left = portrait ? W / 2 : W * 0.06;
+  const align: CanvasTextAlign = portrait ? 'center' : 'left';
+  const maxW = portrait ? W * 0.9 : W * 0.4;
+  let y = portrait ? H * 0.6 : H * 0.2;
+  // COMMITTED, big.
+  const word = (tx.title || 'COMMITTED').toUpperCase();
+  const ws = fit(ctx, word, maxW, S * (portrait ? 0.2 : 0.15));
+  headline(g, word, left, y + ws * 0.85, ws, { align, color: g.c2, reveal: seg(t, 0.45, 0.95), sheen: seg(t, 1.6, 2.5) });
+  y += ws * 1.02;
+  const name = [tx.first, tx.last].filter(Boolean).join(' ').toUpperCase();
+  if (name) {
+    const ns = fit(ctx, name, maxW, S * (portrait ? 0.1 : 0.085));
+    headline(g, name, left, y + ns * 0.88, ns, { align, reveal: seg(t, 0.7, 1.15) });
+    y += ns * 1.08;
+  }
+  const detail = tx.detail || '';
+  if (detail) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1.0, 1.4));
+    const ds = fit(ctx, detail, maxW, S * 0.036, 700, SANS, 0.08);
+    label(g, detail, left, y + ds * 0.9, ds, '#e5e7eb', align, 700, 0.08);
+    ctx.restore();
+    y += ds * 2.2;
+  }
+  // The college: its logo lands, then its name (beside the logo in a wide frame, under it in a tall one).
+  const college = (tx.college || '').toUpperCase();
+  const hasLogo = !!spec.oppLogo && !!g.img(spec.oppLogo);
+  if (college || hasLogo) {
+    const ls = S * (portrait ? 0.17 : 0.16);
+    const cx = portrait ? W / 2 : left + ls / 2;
+    const cy = y + ls * 0.55;
+    if (hasLogo) logoSlam(g, spec.oppLogo, cx, cy, ls, 1.2);
+    if (college) {
+      ctx.save();
+      ctx.globalAlpha = eOut(seg(t, 1.4, 1.9));
+      if (portrait) {
+        const cs = fit(ctx, college, maxW, S * 0.06);
+        headline(g, college, W / 2, (hasLogo ? cy + ls * 0.55 : y) + cs * 1.05, cs, { color: '#fff' });
+      } else {
+        const room = maxW - (hasLogo ? ls * 1.25 : 0);
+        const cs = fit(ctx, college, room, S * 0.055);
+        headline(g, college, hasLogo ? left + ls * 1.25 : left, cy + cs * 0.35, cs, { align: 'left', color: '#fff' });
+      }
+      ctx.restore();
+    }
+  }
+  if (spec.logo) logoAt(g, spec.logo, portrait ? S * 0.11 : W - S * 0.11, S * 0.11, S * 0.13, eOut(seg(t, 1.2, 1.6)));
+  panelWipe(g, seg(t, g.d - 0.5, g.d + 0.15));
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -2158,10 +2271,11 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   victory: drawVictory,
   potw: drawPotw,
   badge: drawBadge,
+  commit: drawCommit,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
-export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw'];
+export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {

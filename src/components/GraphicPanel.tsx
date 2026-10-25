@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { updateSelected } from '../actions';
+import { FULL_FRAME } from '../engine/graphics';
+import { loadImage, renderPoster, shareImages } from '../engine/poster';
+import { POSTER_FORMATS } from '../templates/posters';
 import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
-import { edit, useEditor } from '../store';
+import { edit, toast, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { ColorField, gestureProps, Section, Toggle } from '../ui/controls';
 
@@ -24,6 +28,7 @@ const FIELDS: [string, string][] = [
   ['them', 'Their score'],
   ['themSub', 'Their line'],
   ['score', 'Score'],
+  ['college', 'College'],
   ['set', 'Set'],
   ['result', 'Result'],
   ['sub', 'Lines'],
@@ -49,6 +54,44 @@ function TelestratorPanel({ clip }: { clip: Clip }) {
           <Icon name="trash" /> Clear all marks
         </button>
       )}
+    </Section>
+  );
+}
+
+/** Saves a full-screen graphic, finished, as an image: at the project's size or all three post sizes. */
+function SaveAsImage({ clip }: { clip: Clip }) {
+  const [busy, setBusy] = useState(false);
+  const save = async (all: boolean) => {
+    setBusy(true);
+    try {
+      const { assets, project } = useEditor.getState();
+      const g = clip.graphic!;
+      const ids = [g.logo, g.oppLogo, ...(g.players ?? []).map((p) => p.photo)].filter((x): x is string => !!x);
+      const images: Record<string, HTMLImageElement | null> = {};
+      for (const id of ids) images[id] = await loadImage(assets[id]?.url);
+      const own = clip.assetId ? assets[clip.assetId] : undefined;
+      // A clip's still: its own image, or the thumbnail of a video.
+      const media = own ? await loadImage(own.kind === 'image' ? own.url : own.thumbnail) : null;
+      const sizes: [number, number][] = all ? POSTER_FORMATS.map((f) => f.size) : [[project.settings.width, project.settings.height]];
+      const base = (clip.name || g.type).replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'graphic';
+      const files: File[] = [];
+      for (const [w, h] of sizes) files.push(new File([await renderPoster(g, [w, h], images, media)], `${base}-${w}x${h}.png`, { type: 'image/png' }));
+      if ((await shareImages(files)) === 'downloaded') toast(files.length > 1 ? `Saved ${files.length} images` : `Saved ${files[0].name}`);
+    } catch (e) {
+      toast(`Couldn't make the image: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section title="Image">
+      <p className="muted small">The finished graphic as a picture to post.</p>
+      <button className="btn block primary" disabled={busy} onClick={() => void save(false)}>
+        <Icon name="image" /> {busy ? 'Making...' : 'Save as image'}
+      </button>
+      <button className="btn block" disabled={busy} onClick={() => void save(true)}>
+        Story, post and wide sizes
+      </button>
     </Section>
   );
 }
@@ -114,6 +157,7 @@ export function GraphicPanel({ clip }: { clip: Clip }) {
           <ColorField label="Accent" value={g.oppColors[1]} onChange={(v) => set({ oppColors: [g.oppColors![0], v] })} />
         </Section>
       )}
+      {FULL_FRAME.includes(g.type) && <SaveAsImage clip={clip} />}
       {g.type === 'playerCard' && g.media === 'image' && (
         <Section title="Photo">
           {g.depth && <Toggle label="Living photo (3D camera move)" checked={!g.still} onChange={(v) => set({ still: !v })} />}

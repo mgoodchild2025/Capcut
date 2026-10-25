@@ -19,9 +19,9 @@ export const HEADLINES = ['Player of the Game', 'Athlete of the Week', 'Senior N
 
 export const AWARDS = ['Play of the Week', 'Play of the Game', 'Play of the Month', 'Play of the Season', 'Play of the Year', 'Save of the Week', 'Goal of the Week'];
 
-const STORE_KEY = 'clipforge.reel.info';
+export const STORE_KEY = 'clipforge.reel.info';
 
-const BLANK: ReelInfo = {
+export const BLANK: ReelInfo = {
   name: '',
   number: '',
   position: 'Outside Hitter',
@@ -49,7 +49,7 @@ const BLANK: ReelInfo = {
 };
 
 /** Shrinks an uploaded logo to at most 512px and keeps its transparency. */
-async function logoDataUrl(file: File): Promise<string> {
+export async function logoDataUrl(file: File): Promise<string> {
   const url = URL.createObjectURL(file);
   try {
     const img = new Image();
@@ -79,10 +79,10 @@ function stepsFor(id: ReelStyle): Step[] {
 const blankPlayer = (sport?: string): RosterPlayer => ({ key: uid('r_'), number: '', name: '', position: sportOf(sport).positions[0], starter: true });
 
 /** The sport's positions, keeping one that was typed or chosen for another sport. */
-const positionsWith = (sport: Sport, current: string) => (current && !sport.positions.includes(current) ? [current, ...sport.positions] : sport.positions);
+export const positionsWith = (sport: Sport, current: string) => (current && !sport.positions.includes(current) ? [current, ...sport.positions] : sport.positions);
 
 /** Switches sport: untouched stat rows take the new sport's usual stats, and the position follows. */
-function withSport(i: ReelInfo, id: Sport['id']): ReelInfo {
+export function withSport(i: ReelInfo, id: Sport['id']): ReelInfo {
   const sport = sportOf(id);
   const blankStats = i.stats.every(([, v]) => !v.trim());
   return {
@@ -96,7 +96,7 @@ function withSport(i: ReelInfo, id: Sport['id']): ReelInfo {
 /** Most sports allow overtime periods or extra innings; volleyball is best of five. */
 const maxPeriods = (sport: Sport) => (sport.scoring.result === 'sets' ? 5 : sport.scoring.count + 2);
 
-function loadInfo(): ReelInfo {
+export function loadInfo(): ReelInfo {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
@@ -347,7 +347,7 @@ function StylePicker({ style, onPick, info, setInfo }: { style: ReelStyle; onPic
   );
 }
 
-const LOOKS: { id: GraphicLook; name: string; hint: string }[] = [
+export const LOOKS: { id: GraphicLook; name: string; hint: string }[] = [
   { id: 'broadcast', name: 'Broadcast', hint: 'Bold TV sports package' },
   { id: 'championship', name: 'Championship', hint: 'Gold, spotlights, sparks' },
   { id: 'neon', name: 'Neon', hint: 'Glow and a racing grid' },
@@ -520,7 +520,7 @@ function LivePhotosToggle({ info, setInfo }: { info: ReelInfo; setInfo: (f: (i: 
 }
 
 /** Upload box for a logo (kept as a small PNG data URL). */
-function LogoDrop({ value, onChange, label }: { value?: string; onChange: (v: string | undefined) => void; label: string }) {
+export function LogoDrop({ value, onChange, label }: { value?: string; onChange: (v: string | undefined) => void; label: string }) {
   return (
     <label className="logo-drop" title={value ? `Change ${label}` : `Upload ${label}`}>
       {value ? <img src={value} alt={label} /> : <Icon name="upload" />}
@@ -541,7 +541,7 @@ function LogoDrop({ value, onChange, label }: { value?: string; onChange: (v: st
 // ---------- step 2: player ----------
 
 /** Popular colour pairs plus custom pickers. */
-function ColorPairs({ value, onChange, label }: { value: [string, string]; onChange: (v: [string, string]) => void; label: string }) {
+export function ColorPairs({ value, onChange, label }: { value: [string, string]; onChange: (v: [string, string]) => void; label: string }) {
   return (
     <div className="team-colors" role="group" aria-label={`${label} colours`}>
       {TEAM_COLORS.map((t) => (
@@ -806,7 +806,7 @@ function PlayerForm({ info, setInfo, style }: { info: ReelInfo; setInfo: (f: (i:
 // ---------- roster ----------
 
 /** Turns "12 Jordan Lee, Setter" style lines into players. */
-function parseRoster(textIn: string, sport: Sport): RosterPlayer[] {
+export function parseRoster(textIn: string, sport: Sport): RosterPlayer[] {
   return textIn
     .split(/\n+/)
     .map((line) => line.trim())

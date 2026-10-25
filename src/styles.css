@@ -4989,3 +4989,115 @@ input[type='range']::-moz-range-thumb {
   opacity: 0.7;
   margin-top: 10px;
 }
+
+/* ---------- graphics & posters ---------- */
+.poster-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  text-align: left;
+  background: linear-gradient(120deg, rgba(29, 78, 216, 0.35), rgba(219, 39, 119, 0.25) 60%, rgba(251, 191, 36, 0.25));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.poster-banner > span:nth-child(2) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.poster-banner small {
+  color: var(--text-2);
+}
+
+.poster-banner-art {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.vb-posters {
+  margin-top: 8px;
+}
+
+.poster-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px;
+  align-items: start;
+}
+
+.poster-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.poster-preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.poster-formats {
+  align-self: stretch;
+}
+
+.poster-formats button {
+  flex: 1;
+}
+
+.poster-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 58vh;
+  border-radius: 10px;
+  background: #000;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.poster-photo {
+  width: 72px;
+  height: 90px;
+}
+
+.poster-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster-studio .roster-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .poster-body {
+    grid-template-columns: 1fr;
+  }
+
+  /* The picture leads on a phone; the form follows. */
+  .poster-preview {
+    position: static;
+    order: -1;
+  }
+
+  .poster-canvas {
+    max-height: 46vh;
+  }
+}

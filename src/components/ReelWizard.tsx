@@ -122,7 +122,10 @@ export function ReelWizard() {
   const assets = useEditor((s) => s.assets);
   const [style, setStyle] = useState<ReelStyle>(preset?.style ?? 'recruiting');
   const [info, setInfo] = useState<ReelInfo>(loadInfo);
-  const [clips, setClips] = useState<WClip[]>([]);
+  // Plays handed over from the match screen start out picked.
+  const [clips, setClips] = useState<WClip[]>(() =>
+    (preset?.clips ?? []).map((c, i) => ({ ...c, key: `preset:${i}:${c.assetId}:${c.inPoint}`, label: `${assets[c.assetId]?.name ?? 'Play'} ${formatDuration(c.inPoint)}` })),
+  );
   const [musicId, setMusicId] = useState<string | null>(REEL_STYLES.find((s) => s.id === (preset?.style ?? 'recruiting'))!.music);
   const [step, setStep] = useState<Step>(preset?.style ? 'player' : 'style');
   const [building, setBuilding] = useState(false);

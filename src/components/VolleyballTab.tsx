@@ -71,6 +71,17 @@ export function VolleyballTab() {
         ))}
       </div>
 
+      <button className="vb-hero vb-match" onClick={() => useEditor.setState({ match: {} })}>
+        <span className="vb-hero-art" aria-hidden="true">
+          <Icon name="film" size={30} />
+        </span>
+        <span>
+          <strong>Break down a full match</strong>
+          <small>Every rally of a game video, found automatically: watch them back to back, trim them, pick the best and make a reel.</small>
+        </span>
+        <Icon name="chevronRight" />
+      </button>
+
       <h5 className="lib-h">
         <Icon name="sparkle" size={13} /> Find highlights in game footage
       </h5>

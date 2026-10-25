@@ -1242,3 +1242,47 @@ export async function generateSpeech(text: string, voice: string): Promise<boole
   if (res) toast('Voiceover added at the playhead');
   return !!res;
 }
+
+// ---------- match analysis ----------
+
+/** Splits a game video into its rallies and keeps them with the project. */
+export async function analyzeMatchIn(assetId: string): Promise<boolean> {
+  const asset = get().assets[assetId];
+  if (!asset || asset.kind !== 'video') return false;
+  const res = await runTask('Analysing the match', async (report, signal) => {
+    const { analyzeMatch } = await import('./ai/highlights');
+    return analyzeMatch(asset, { onProgress: report, signal });
+  });
+  if (!res) return false;
+  edit((p) => ({ ...p, matches: { ...p.matches, [assetId]: res } }));
+  toast(res.rallies.length ? `Found ${res.rallies.length} rall${res.rallies.length === 1 ? 'y' : 'ies'}` : 'No rallies found in that video');
+  return true;
+}
+
+/** Changes one rally of an analysed game (its edges), or removes it. */
+export function updateRally(assetId: string, id: string, patch: Partial<import('./model/types').MatchRally> | null) {
+  edit((p) => {
+    const m = p.matches?.[assetId];
+    if (!m) return p;
+    const rallies = patch === null ? m.rallies.filter((r) => r.id !== id) : m.rallies.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    return { ...p, matches: { ...p.matches, [assetId]: { ...m, rallies } } };
+  });
+}
+
+/** Puts rallies on the timeline, in game order. */
+export function addRalliesToTimeline(assetId: string, ids: string[]) {
+  const asset = get().assets[assetId];
+  const m = get().project.matches?.[assetId];
+  if (!asset || !m) return;
+  const picked = m.rallies.filter((r) => ids.includes(r.id)).sort((a, b) => a.start - b.start);
+  edit((p) => picked.reduce((next, r) => appendToMain(next, { ...createMediaClip(asset), inPoint: r.start, duration: r.end - r.start }), p));
+  toast(`Added ${picked.length} rall${picked.length === 1 ? 'y' : 'ies'} to the timeline`);
+}
+
+/** Opens the reel wizard with these rallies already picked. */
+export function reelFromRallies(assetId: string, ids: string[]) {
+  const m = get().project.matches?.[assetId];
+  if (!m) return;
+  const clips = m.rallies.filter((r) => ids.includes(r.id)).sort((a, b) => a.start - b.start).map((r) => ({ assetId, inPoint: r.start, duration: r.end - r.start }));
+  useEditor.setState({ match: null, wizard: { clips }, leftTab: 'volleyball' });
+}

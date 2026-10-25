@@ -34,7 +34,9 @@ export interface EditorState {
   /** Graphics & posters studio; `kind` preselects a poster. */
   posters: { kind?: import('./templates/posters').PosterKind } | null;
   /** Highlight reel wizard; `style` preselects a template. */
-  wizard: { style?: import('./templates/reel').ReelStyle } | null;
+  wizard: { style?: import('./templates/reel').ReelStyle; clips?: import('./templates/reel').ReelClip[] } | null;
+  /** The match screen: a game video's rallies. */
+  match: { assetId?: string } | null;
   /** Telestrator pen: drawing on the selected telestrator graphic in the preview. */
   draw: { tool: import('./model/types').TeleMark['kind']; color: string } | null;
   /** Playback stats overlay (press and hold the timecode, or add ?stats to the address). */
@@ -103,6 +105,7 @@ export const useEditor = create<EditorState>(() => ({
   recording: null,
   wizard: null,
   posters: null,
+  match: null,
   showStats: statsOn(),
   draw: null,
 }));

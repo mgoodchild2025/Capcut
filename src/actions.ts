@@ -30,6 +30,8 @@ import {
 } from './model/ops';
 import { CURVE_PRESETS, curveAverage, removeKeyframe, setKeyframe, valueAt, hasKeyframeAt } from './model/timing';
 import type { Asset, Clip, KeyProp, Project, Spotlight, TextStyle, TransitionKind } from './model/types';
+import { pointOf as pointOfTag } from './stats/matchStats';
+import { uid as newId } from './utils';
 import { addAsset, commit, edit, openProject, patchAsset, select, selectedClip, toast, untilPaused, useEditor } from './store';
 
 const get = useEditor.getState;
@@ -1285,4 +1287,33 @@ export function reelFromRallies(assetId: string, ids: string[]) {
   if (!m) return;
   const clips = m.rallies.filter((r) => ids.includes(r.id)).sort((a, b) => a.start - b.start).map((r) => ({ assetId, inPoint: r.start, duration: r.end - r.start }));
   useEditor.setState({ match: null, wizard: { clips }, leftTab: 'volleyball' });
+}
+
+/** Tags a rally: adds an action (and the point it ends with, unless the winner is already set), or removes one. */
+export function tagRally(assetId: string, rallyId: string, change: { add?: Omit<import('./model/types').RallyAction, 'id'>; remove?: string; won?: 'us' | 'them' | null }) {
+  edit((p) => {
+    const m = p.matches?.[assetId];
+    if (!m) return p;
+    const rallies = m.rallies.map((r) => {
+      if (r.id !== rallyId) return r;
+      let actions = r.actions ?? [];
+      let won = r.won;
+      if (change.add) {
+        actions = [...actions, { ...change.add, id: newId('t_') }];
+        won ??= pointOfTag(change.add);
+      }
+      if (change.remove) actions = actions.filter((a) => a.id !== change.remove);
+      if (change.won !== undefined) won = change.won ?? undefined;
+      return { ...r, actions, won };
+    });
+    return { ...p, matches: { ...p.matches, [assetId]: { ...m, rallies } } };
+  });
+}
+
+/** The teams, roster and first serve of a tagged match. */
+export function setMatchInfo(assetId: string, patch: Partial<Pick<import('./model/types').MatchData, 'us' | 'them' | 'players' | 'serveFirst' | 'sport'>>) {
+  edit((p) => {
+    const m = p.matches?.[assetId];
+    return m ? { ...p, matches: { ...p.matches, [assetId]: { ...m, ...patch } } } : p;
+  });
 }

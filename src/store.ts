@@ -31,6 +31,8 @@ export interface EditorState {
   pick: 'chroma' | 'spotlight' | null;
   /** Voiceover recording in progress, started at this timeline time. */
   recording: { start: number } | null;
+  /** Graphics & posters studio; `kind` preselects a poster. */
+  posters: { kind?: import('./templates/posters').PosterKind } | null;
   /** Highlight reel wizard; `style` preselects a template. */
   wizard: { style?: import('./templates/reel').ReelStyle } | null;
   /** Telestrator pen: drawing on the selected telestrator graphic in the preview. */
@@ -100,6 +102,7 @@ export const useEditor = create<EditorState>(() => ({
   pick: null,
   recording: null,
   wizard: null,
+  posters: null,
   showStats: statsOn(),
   draw: null,
 }));

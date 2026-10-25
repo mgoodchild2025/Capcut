@@ -127,6 +127,10 @@ src/
 
 The preview, export and audio mix all read the same timing model (`model/timing.ts`) and compositor (`engine/render.ts`), so what you see is what you export.
 
+## Graphics & posters
+
+Make still images to post, in the same broadcast package: **Game day** (split-screen versus with when and where), **Final score**, **Victory**, **Player spotlight** (Player of the Game, Senior Night...), **Play of the Week**, **College commitment** (with the college logo), **Stats** and **Starting lineup**. Open it from the home screen or the Sports tab, fill in the details (remembered from your reels), add a photo (Cut out removes its background), and save as a Story (9:16), Post (4:5) or Wide (16:9) image, or all three at once. Any full-screen graphic in a reel also has **Save as image** in its inspector.
+
 ## Music and sound credits
 
 Every bundled recording is dedicated to the public domain (CC0) by its creator, so reels can be posted anywhere. Credit isn't required, but here it is with thanks:

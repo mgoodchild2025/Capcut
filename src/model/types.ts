@@ -42,7 +42,7 @@ export interface Track {
 
 export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'graphic';
 
-export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator' | 'versus' | 'victory' | 'potw' | 'badge';
+export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator' | 'versus' | 'victory' | 'potw' | 'badge' | 'commit';
 
 /** A telestrator drawing: points are fractions of the frame. Circles are [centre, edge]; arrows and lines [from, to]. */
 export interface TeleMark {

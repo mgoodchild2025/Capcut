@@ -163,6 +163,11 @@ export interface ReelInfo {
   /** The award ("Play of the Week") and its week ("Week 7"). */
   award?: string;
   week?: string;
+  /** The team's name on posters, kept apart from the player's (`name`) so both can be filled in. */
+  team?: string;
+  /** A commitment announcement: the college and its logo (PNG data URL). */
+  college?: string;
+  collegeLogo?: string;
 }
 
 export interface ReelClip {

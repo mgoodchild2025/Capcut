@@ -41,6 +41,16 @@ export function VolleyballTab() {
         </span>
         <Icon name="chevronRight" />
       </button>
+      <button className="vb-hero vb-posters" onClick={() => useEditor.setState({ posters: {} })}>
+        <span className="vb-hero-art" aria-hidden="true">
+          <Icon name="image" size={30} />
+        </span>
+        <span>
+          <strong>Graphics &amp; posters</strong>
+          <small>Game day, final score, victory, player spotlight, Play of the Week, commitment, stats and lineup images to post.</small>
+        </span>
+        <Icon name="chevronRight" />
+      </button>
       <div className="vb-styles">
         {(
           [

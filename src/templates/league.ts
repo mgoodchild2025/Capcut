@@ -12,8 +12,8 @@ import type { LeagueDetails, LeagueTeam, ReelClip, ReelInput, ReelStyle } from '
 import { REEL_STYLES } from './reel';
 import { upper } from './shared';
 
-type LeagueStyle = Extract<ReelStyle, 'season' | 'gamenight' | 'playoffs' | 'signup'>;
-export const LEAGUE_STYLES: LeagueStyle[] = ['season', 'gamenight', 'playoffs', 'signup'];
+type LeagueStyle = Extract<ReelStyle, 'season' | 'gamenight' | 'playoffs' | 'signup' | 'schedule' | 'standings' | 'tournament' | 'final' | 'champions'>;
+export const LEAGUE_STYLES: LeagueStyle[] = ['season', 'gamenight', 'playoffs', 'signup', 'schedule', 'standings', 'tournament', 'final', 'champions'];
 export const isLeagueStyle = (s: ReelStyle): s is LeagueStyle => (LEAGUE_STYLES as ReelStyle[]).includes(s);
 
 /** Each spot's slogan, when the league hasn't written one. */
@@ -22,6 +22,11 @@ export const DEFAULT_TAGLINE: Record<LeagueStyle, string> = {
   gamenight: 'One night. One winner.',
   playoffs: 'Win or go home.',
   signup: 'Your league. Your team. Your season.',
+  schedule: 'Circle the dates. Fill the stands.',
+  standings: 'Every game counts.',
+  tournament: 'One weekend. Every team. One champion.',
+  final: 'Two teams. One trophy.',
+  champions: 'Earned. Every point of it.',
 };
 
 /** The cold open's words. */
@@ -30,6 +35,11 @@ const COLD_OPEN: Record<LeagueStyle, string[]> = {
   gamenight: ['Tonight'],
   playoffs: ['It all', 'comes down', 'to this'],
   signup: ['New season', 'starts now'],
+  schedule: ['This week'],
+  standings: ['The race', 'is on'],
+  tournament: ['One weekend', 'everything', 'on the line'],
+  final: ['It all', 'comes down', 'to this'],
+  champions: ['And your', 'champions are'],
 };
 
 export const blankLeague = (): LeagueDetails => ({ tagline: '', when: '', where: '', url: '', sponsor: '', teams: [] });
@@ -164,6 +174,67 @@ export function buildLeaguePromo(input: ReelInput, assets: Record<string, Asset>
     poster = end() + 2.8;
     full('bracket', { title: upper([info.season, 'Playoffs'].filter(Boolean).join(' ')), final: 'CHAMPION' }, bars(3), { teams }, 'Bracket');
   }
+  const byKey = (k?: string) => L.teams.find((t) => t.key === k);
+  if (style === 'schedule') {
+    const games = (L.games ?? []).filter((x) => byKey(x.away) && byKey(x.home)).slice(0, 6);
+    if (games.length) {
+      full(
+        'fixtures',
+        { title: 'THIS WEEK', sub: [league, info.season].filter(Boolean).join('  ·  ') },
+        bars(Math.min(4, 2 + games.length * 0.4)),
+        { teams: games.flatMap((x) => [teamOf(byKey(x.away)!), teamOf(byKey(x.home)!)]), rows: games.map((x) => [x.when, x.where]) },
+        'This week',
+      );
+      poster = end() - 0.4;
+    }
+  }
+  if (style === 'standings' && teams.length) {
+    full(
+      'standings',
+      { title: upper([info.season, 'Standings'].filter(Boolean).join(' ')) },
+      bars(Math.min(4, 2.5 + teams.length * 0.12)),
+      { teams, rows: L.teams.filter((t) => t.name.trim()).map((t) => [t.record ?? '', t.points ?? '']) },
+      'Standings',
+    );
+    poster = end() - 0.4;
+  }
+  if (style === 'tournament') {
+    full('eventCard', { kicker: upper(info.season), title: upper(league), when: L.when, where: L.where, divisions: L.divisions ?? '', prize: L.prize ?? '' }, bars(3), {}, league);
+    poster = end() - 0.4;
+  }
+  if (style === 'final') {
+    const a = byKey(L.away) ?? L.teams[0];
+    const h = (byKey(L.home) !== a && byKey(L.home)) || L.teams.find((t) => t !== a);
+    const ta = a ? teamOf(a) : { name: 'Finalist', colors: info.colors, logo: undefined };
+    const th = h ? teamOf(h) : { name: 'Finalist', colors: ['#b91c1c', '#f8fafc'] as [string, string], logo: undefined };
+    poster = end() + 2.4;
+    full(
+      'versus',
+      {
+        kicker: 'THE FINAL',
+        usName: upper(ta.name),
+        themName: upper(th.name),
+        usSub: a?.record ?? '',
+        themSub: h?.record ?? '',
+        sub: [league, L.prize].filter(Boolean).join('  ·  '),
+      },
+      bars(2.5),
+      { colors: ta.colors, logo: ta.logo, oppColors: th.colors, oppLogo: th.logo },
+      `${ta.name} v ${th.name}`,
+    );
+  }
+  if (style === 'champions') {
+    const champ = teams[0] ?? { name: league, colors: info.colors, logo };
+    poster = end() + 2.6;
+    full(
+      'victory',
+      { kicker: upper([info.season, league].filter(Boolean).join(' ')), title: 'CHAMPIONS', score: L.score?.trim() ?? '', sub: upper(champ.name) },
+      bars(2.5),
+      { colors: champ.colors, logo: champ.logo },
+      `${champ.name}, champions`,
+    );
+    if (teams.length > 1) full('podium', { title: upper([info.season, league].filter(Boolean).join(' ')) }, bars(3), { teams: teams.slice(0, 3) }, 'Podium');
+  }
 
   // ---------- the slogan, a punch at a time over the fastest cuts ----------
   const lines = punches(L.tagline.trim() || DEFAULT_TAGLINE[style]);
@@ -190,19 +261,35 @@ export function buildLeaguePromo(input: ReelInput, assets: Record<string, Asset>
     if (i % 2 === 1) over('glitch', {}, Math.max(0, from - 0.12), 0.3, '');
   }
 
+  // ---------- the tournament's MVP ----------
+  if (style === 'champions' && L.mvp?.trim()) {
+    const rc = take();
+    const from = end();
+    const words = `MVP|${L.mvp.trim()}`;
+    if (rc) {
+      play(rc, bars(1.5), { slow: true, transition: 'flash' });
+      over('kinetic', { lines: words, mode: 'slam', dim: '1' }, from + 0.04, end() - from - 0.04, `MVP ${L.mvp.trim()}`);
+    } else full('kinetic', { lines: words, mode: 'slam', bg: '1' }, bars(1.5), {}, `MVP ${L.mvp.trim()}`);
+  }
+
   // ---------- the details ----------
-  if (style === 'signup') {
-    const rows: [string, string][] = [
-      ['Divisions', L.divisions ?? ''],
-      ['Season', L.when],
-      ['Fee', L.fee ?? ''],
-      ['Register by', L.deadline ?? ''],
-    ].filter(([, v]) => v.trim()) as [string, string][];
+  const entry: [string, string][] = [
+    ['Divisions', L.divisions ?? ''],
+    [style === 'tournament' ? 'Dates' : 'Season', L.when],
+    ['Fee', L.fee ?? ''],
+    ['Register by', L.deadline ?? ''],
+  ].filter(([, v]) => v.trim()) as [string, string][];
+  if (style === 'tournament') {
+    if (L.url.trim() || entry.length > 1) full('signup', { title: 'ENTER YOUR TEAM', url: L.url.trim() }, bars(3.5), { rows: entry }, 'Enter your team');
+  } else if (style === 'schedule' || style === 'champions') {
+    // The board and the crowning say it all.
+  } else if (style === 'signup') {
     poster = end() + 2.2;
-    full('signup', { title: 'REGISTRATION OPEN', url: L.url.trim() }, bars(3.5), { rows }, 'Sign up');
+    full('signup', { title: 'REGISTRATION OPEN', url: L.url.trim() }, bars(3.5), { rows: entry }, 'Sign up');
   } else if (L.when.trim()) {
     const { title, sub } = whenParts(L.when);
-    const kicker = style === 'season' ? 'Season tips off' : style === 'playoffs' ? 'Playoffs begin' : 'Game night';
+    const kicker =
+      { season: 'Season tips off', playoffs: 'Playoffs begin', gamenight: 'Game night', standings: 'Next up', final: 'Championship final' }[style as string] ?? 'Game night';
     full('dateSlate', { kicker: upper(kicker), title: upper(title), sub, where: L.where }, bars(2), {}, title);
   }
 
@@ -229,9 +316,21 @@ export function buildLeaguePromo(input: ReelInput, assets: Record<string, Asset>
       p = placeClip(p, { ...createMediaClip(whoosh), start: Math.max(0, t - 0.35), volume: 0.45, id: uid('c_') });
   const impact = cards.impact ? assets[cards.impact] : undefined;
   if (impact)
-    for (const t of [p.clips.find((c) => c.graphic && ['logoWall', 'versus', 'bracket'].includes(c.graphic.type))?.start, signOff].filter((x): x is number => x !== undefined))
+    for (const t of [
+      p.clips.find((c) => c.graphic && ['logoWall', 'versus', 'bracket', 'fixtures', 'standings', 'eventCard', 'victory'].includes(c.graphic.type))?.start,
+      signOff,
+    ].filter((x): x is number => x !== undefined))
       p = placeClip(p, { ...createMediaClip(impact), start: t + 0.25, volume: 0.7, id: uid('c_') });
   const crowd = cards.crowd ? assets[cards.crowd] : undefined;
+  // The champions crowned to a roar.
+  const crowned = p.clips.find((c) => c.graphic?.type === 'victory');
+  if (crowd && crowned) {
+    const c = { ...createMediaClip(crowd), start: crowned.start + 0.2, volume: 0.45, id: uid('c_') };
+    c.duration = Math.min(crowd.duration, crowned.duration + 0.6);
+    c.audioFadeIn = 0.15;
+    c.audioFadeOut = Math.min(1.2, c.duration / 3);
+    p = placeClip(p, c);
+  }
   if (crowd) {
     const c = { ...createMediaClip(crowd), start: Math.max(0, signOff - 0.3), volume: 0.3, id: uid('c_') };
     c.duration = Math.min(crowd.duration, total - c.start);

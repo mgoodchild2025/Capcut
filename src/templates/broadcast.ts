@@ -32,6 +32,11 @@ const LOOK: Record<ReelStyle, { beat: boolean; slowMo: boolean; transitions: Tra
   gamenight: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
   playoffs: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
   signup: { beat: true, slowMo: false, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  schedule: { beat: true, slowMo: false, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  standings: { beat: true, slowMo: false, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  tournament: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  final: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  champions: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
 };
 
 const STINGER = 0.8;

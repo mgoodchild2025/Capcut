@@ -175,7 +175,10 @@ export function ReelWizard() {
     step === 'player'
       ? info.name.trim().length > 0
       : step === 'league'
-        ? info.name.trim().length > 0 && (style !== 'gamenight' || leagueTeams >= 2)
+        ? info.name.trim().length > 0 &&
+          ((style !== 'gamenight' && style !== 'final') || leagueTeams >= 2) &&
+          ((style !== 'standings' && style !== 'champions') || leagueTeams >= 1) &&
+          (style !== 'schedule' || (info.league?.games ?? []).length > 0)
       : step === 'roster'
         ? (meta.roster === 'intros' ? starters : named) > 0
         : step === 'clips'
@@ -342,6 +345,42 @@ function sampleSpec(id: ReelStyle, colors: [string, string], look?: GraphicLook)
         at: 3,
         duration: 6,
       };
+    case 'schedule':
+      return {
+        spec: {
+          ...base,
+          type: 'fixtures',
+          text: { title: 'THIS WEEK' },
+          teams: SAMPLE_TEAMS!.slice(0, 6),
+          rows: [
+            ['Fri 7 PM', 'Court 1'],
+            ['Fri 8:30 PM', 'Court 2'],
+            ['Sat 6 PM', 'Metro Arena'],
+          ],
+        },
+        at: 3,
+        duration: 5,
+      };
+    case 'standings':
+      return {
+        spec: { ...base, type: 'standings', text: { title: 'STANDINGS' }, teams: SAMPLE_TEAMS, rows: ['9-1', '8-2', '6-4', '5-5', '3-7', '2-8'].map((r, i) => [r, String(27 - i * 4)]) },
+        at: 3.4,
+        duration: 5,
+      };
+    case 'tournament':
+      return {
+        spec: { ...base, type: 'eventCard', text: { kicker: '2026', title: 'SPRING SHOWDOWN', when: 'May 16-17', where: 'Metro Sports Complex', divisions: 'U14 · U16 · U18 · Open', prize: '$2,000 prize pool' } },
+        at: 3,
+        duration: 5,
+      };
+    case 'final':
+      return {
+        spec: { ...base, type: 'versus', oppColors: ['#b91c1c', '#f8fafc'], text: { kicker: 'THE FINAL', usName: 'STORM', themName: 'ROCKETS', usSub: '', themSub: '', sub: 'Spring Showdown  ·  The Showdown Cup' } },
+        at: 2.4,
+        duration: 4.6,
+      };
+    case 'champions':
+      return { spec: { ...base, type: 'podium', text: { title: 'SPRING SHOWDOWN' }, teams: SAMPLE_TEAMS!.slice(0, 3) }, at: 3.2, duration: 5 };
     case 'recap':
       return { spec: { ...base, type: 'final', text: { usName: 'Rockets', themName: 'Storm', result: 'Rockets win 3-1' }, sets: [[25, 21], [23, 25], [25, 19], [25, 22]] }, at: 3, duration: 4.5 };
     default:
@@ -391,7 +430,31 @@ function StylePicker({ style, onPick, info, setInfo }: { style: ReelStyle; onPic
       <h3 className="wiz-title">League promos</h3>
       <p className="wiz-lede">Network-style spots for the whole league, like the season promos on sports TV: cinematic cold open, slamming type, every team, and the league sign-off.</p>
       <div className="style-cards">
-        {REEL_STYLES.filter((s) => s.subject === 'league').map((s, i) => {
+        {REEL_STYLES.filter((s) => s.subject === 'league' && !s.tournament).map((s, i) => {
+          const sample = sampleSpec(s.id, info.colors, info.look);
+          return (
+            <button
+              key={s.id}
+              className={`style-card ${style === s.id ? 'on' : ''}`}
+              onClick={() => onPick(s.id)}
+              onPointerEnter={() => setHover(s.id)}
+              onPointerLeave={() => setHover((h) => (h === s.id ? null : h))}
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
+              <span className={`style-frame ${s.aspect[1] > s.aspect[0] ? 'tall' : 'wide'}`}>
+                <GraphicPreview spec={sample.spec} width={s.aspect[0]} height={s.aspect[1]} at={sample.at} duration={sample.duration} animate={hover === s.id} logo={info.logo} oppLogo={info.oppLogo} />
+                <em>{aspectLabel(s.aspect)}</em>
+              </span>
+              <strong>{s.title}</strong>
+              <small>{s.blurb}</small>
+            </button>
+          );
+        })}
+      </div>
+      <h3 className="wiz-title">Tournament promos</h3>
+      <p className="wiz-lede">Promote an event the way the networks do: the announcement, the championship final, and the champions crowned.</p>
+      <div className="style-cards">
+        {REEL_STYLES.filter((s) => s.tournament).map((s, i) => {
           const sample = sampleSpec(s.id, info.colors, info.look);
           return (
             <button

@@ -51,6 +51,14 @@ Network-style spots for a whole league, in the manner of the season promos on sp
 - **Game night**: the visitors at the home team, billed in their colours with their records, then when and where to watch.
 - **Playoffs**: the bracket draws itself in, seeds and all, to the champion's empty slot.
 - **Registration**: an upbeat spot ending on divisions, dates, fee and deadline, with a QR code to the sign-up page.
+- **This week**: the week's games on one board, each matchup with its time and court.
+- **Standings**: the table builds in from the bottom, records and points, the leader in the accent.
+
+**Tournament promos** (their own group on Home):
+
+- **Tournament**: the event announced with a trophy, dates, venue, divisions and prize, ending on "Enter your team" with a QR code to the entry page.
+- **Championship final**: the two finalists face off, then when the final starts.
+- **Champions**: the winners crowned with confetti (and the final's score), the podium for first, second and third, the MVP, and the sign-off.
 
 Give the league's name, logo, colours, slogan (each short sentence gets its own beat), when, where, website and sponsor, and its teams (name, colours, logo; paste a list of names to add them all). Footage is optional: without it, the words carry the spot full screen. Every cut lands on the music's beat. Choose 16:9 for TV and YouTube or 9:16 for Stories and Reels. Reel settings changes the details afterwards.
 

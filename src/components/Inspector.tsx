@@ -21,6 +21,7 @@ import { Icon } from '../ui/Icon';
 import { formatTimecode } from '../utils';
 
 type Tab = 'graphic' | 'text' | 'basic' | 'audio' | 'speed' | 'animation' | 'adjust' | 'cutout' | 'spotlight';
+let lastTab: Tab = 'basic';
 
 const TAB_LABELS: Record<Tab, string> = {
   graphic: 'Graphic',
@@ -53,7 +54,12 @@ function tabsFor(c: Clip): Tab[] {
 
 export function Inspector() {
   const clip = useEditor(selectedClip);
-  const [tab, setTab] = useState<Tab>('basic');
+  // Remembered while the panel comes and goes (the phone's sheet closes for a tap on the preview).
+  const [tab, setTabState] = useState<Tab>(() => lastTab);
+  const setTab = (t: Tab) => {
+    lastTab = t;
+    setTabState(t);
+  };
   const tabs = clip ? tabsFor(clip) : [];
   const active = tabs.includes(tab) ? tab : tabs[0];
 

@@ -4,6 +4,7 @@ import {
   DEFAULT_SPOTLIGHT,
   detachAudioSelected,
   autoReframeSelected,
+  clearFollowFixes,
   followSelectedPlayer,
   freezeFrameSelected,
   hasCopiedStyle,
@@ -395,9 +396,24 @@ export function SpotlightPanel({ clip }: { clip: Clip }) {
               <Icon name="target" /> {clip.follow ? 'Follow again' : 'Follow this player'}
             </button>
             {clip.follow && (
-              <button className="btn block" onClick={stopFollowingSelected}>
-                Remove the marker
-              </button>
+              <>
+                <p className="muted small">Wrong player at some point? Pause where it goes astray, then tap the right one. Each fix holds the tracking to them at that moment.</p>
+                <button
+                  className={`btn block ${pick === 'follow' ? 'primary' : ''}`}
+                  disabled={busy}
+                  onClick={() => useEditor.setState({ pick: pick === 'follow' ? null : 'follow' })}
+                >
+                  <Icon name="target" /> {pick === 'follow' ? 'Tap your player in the preview' : 'Fix the tracking here'}
+                </button>
+                {!!clip.follow.fixes?.length && (
+                  <button className="link-btn" disabled={busy} onClick={() => void clearFollowFixes()}>
+                    Clear {clip.follow.fixes.length} fix{clip.follow.fixes.length === 1 ? '' : 'es'}
+                  </button>
+                )}
+                <button className="btn block" onClick={stopFollowingSelected}>
+                  Remove the marker
+                </button>
+              </>
             )}
           </Section>
         </>

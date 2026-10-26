@@ -1,11 +1,12 @@
 import type { Asset, GraphicLook, Project } from '../model/types';
 import type { SportId } from './sports';
 import { buildBroadcastReel } from './broadcast';
+import { buildLeaguePromo, isLeagueStyle } from './league';
 
-export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'potw' | 'team' | 'victory' | 'lineup' | 'matchup';
+export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'potw' | 'team' | 'victory' | 'lineup' | 'matchup' | 'season' | 'gamenight' | 'playoffs' | 'signup';
 
 /** Which wizard steps a style uses and what it's about. */
-export type ReelSubject = 'player' | 'team';
+export type ReelSubject = 'player' | 'team' | 'league';
 
 export const REEL_STYLES: {
   id: ReelStyle;
@@ -102,6 +103,39 @@ export const REEL_STYLES: {
     music: 'great-mission',
     subject: 'team',
   },
+  // League promos: broadcast-network spots for the whole league.
+  {
+    id: 'season',
+    title: 'Season launch',
+    blurb: 'The network-style season promo: cinematic cold open, slamming type, every team, opening night and the league sign-off.',
+    aspect: [1920, 1080],
+    music: 'the-rush',
+    subject: 'league',
+  },
+  {
+    id: 'gamenight',
+    title: 'Game night',
+    blurb: "Tonight's big matchup, promoted like prime time: team versus team, when and where to watch.",
+    aspect: [1920, 1080],
+    music: 'final-hour',
+    subject: 'league',
+  },
+  {
+    id: 'playoffs',
+    title: 'Playoffs',
+    blurb: 'Win or go home: the bracket draws in, the stakes in big type, and when it all begins.',
+    aspect: [1920, 1080],
+    music: 'determined-pursuit',
+    subject: 'league',
+  },
+  {
+    id: 'signup',
+    title: 'Registration',
+    blurb: 'Fill the league: an upbeat spot that ends on divisions, dates, fees and a QR code to sign up.',
+    aspect: [1920, 1080],
+    music: 'rhythm-factory',
+    subject: 'league',
+  },
 ];
 
 
@@ -168,6 +202,41 @@ export interface ReelInfo {
   /** A commitment announcement: the college and its logo (PNG data URL). */
   college?: string;
   collegeLogo?: string;
+  /** League promos (the league is `name`, its logo `logo`, its colours `colors`). */
+  league?: LeagueDetails;
+  /** League promos are 16:9 for screens, or 9:16 for Stories and Reels. */
+  format?: 'tv' | 'social';
+}
+
+/** A team in the league. */
+export interface LeagueTeam {
+  key: string;
+  name: string;
+  colors: [string, string];
+  /** Logo as a PNG data URL. */
+  logo?: string;
+  record?: string;
+}
+
+/** What a league promo says beyond the league's name, logo and colours. */
+export interface LeagueDetails {
+  /** The slogan, in short sentences: "Every point. Every night. One champion." */
+  tagline: string;
+  /** When: "Opening night · Sat Jan 10 · 7 PM". */
+  when: string;
+  /** Where to be or to watch: "Metro Arena · Live on YouTube". */
+  where: string;
+  url: string;
+  /** "Presented by ..." */
+  sponsor: string;
+  teams: LeagueTeam[];
+  /** Game night: the two teams, by key (home last, as broadcasts bill it). */
+  home?: string;
+  away?: string;
+  /** Registration. */
+  divisions?: string;
+  deadline?: string;
+  fee?: string;
 }
 
 export interface ReelClip {
@@ -206,6 +275,8 @@ export interface ReelAssets {
   cutouts?: string[];
   /** Depth maps (asset ids) by photo asset id, for living photos. */
   depths?: Record<string, string>;
+  /** League promos: each team's logo, by team key. */
+  teamLogos?: Record<string, string>;
 }
 
 export interface ReelInput {
@@ -217,7 +288,7 @@ export interface ReelInput {
 
 /** Lays out a whole highlight reel on a fresh timeline. */
 export function buildReel(input: ReelInput, assets: Record<string, Asset>): Project {
-  return buildBroadcastReel(input, assets);
+  return isLeagueStyle(input.style) ? buildLeaguePromo(input, assets) : buildBroadcastReel(input, assets);
 }
 
 /** Popular team colour pairs. */

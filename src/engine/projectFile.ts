@@ -29,7 +29,7 @@ export class ProjectFileError extends Error {
 /** Every asset a clip needs: its own media and, for graphics, logos, depth maps and roster photos. */
 export function mediaRefs(c: Clip): string[] {
   const g = c.graphic;
-  return [c.assetId, g?.logo, g?.oppLogo, g?.depth, ...(g?.players ?? []).map((p) => p.photo)].filter((x): x is string => !!x);
+  return [c.assetId, g?.logo, g?.oppLogo, g?.depth, ...(g?.players ?? []).map((p) => p.photo), ...(g?.teams ?? []).map((t) => t.logo)].filter((x): x is string => !!x);
 }
 
 export function remapClip(c: Clip, map: (id: string) => string): Clip {
@@ -43,6 +43,7 @@ export function remapClip(c: Clip, map: (id: string) => string): Clip {
       oppLogo: g.oppLogo && map(g.oppLogo),
       depth: g.depth && map(g.depth),
       players: g.players?.map((p) => ({ ...p, photo: p.photo && map(p.photo) })),
+      teams: g.teams?.map((t) => ({ ...t, logo: t.logo && map(t.logo) })),
     },
   };
 }
@@ -69,6 +70,7 @@ export function reelRefs(r: Project['reel']): string[] {
     ...Object.values(c.players ?? {}),
     ...(c.cutouts ?? []),
     ...Object.entries(c.depths ?? {}).flat(),
+    ...Object.values(c.teamLogos ?? {}),
   ].filter((x): x is string => !!x);
 }
 
@@ -95,6 +97,7 @@ export function remapReel(r: Project['reel'], map: (id: string) => string): Proj
         players: c.players && Object.fromEntries(Object.entries(c.players).map(([k, v]) => [k, map(v)])),
         cutouts: c.cutouts?.map(map),
         depths: c.depths && Object.fromEntries(Object.entries(c.depths).map(([k, v]) => [map(k), map(v)])),
+        teamLogos: c.teamLogos && Object.fromEntries(Object.entries(c.teamLogos).map(([k, v]) => [k, map(v)])),
       },
     },
   };

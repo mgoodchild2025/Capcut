@@ -3,6 +3,7 @@ import { buildReelFromWizard, findHighlightsIn, importFiles, stopPreviewSound, t
 import { highlightKey, useHighlights } from '../ai/highlightState';
 import { LIBRARY_MUSIC, type MusicGenre } from '../audio/library';
 import { GenreChips } from './AudioTab';
+import { LeagueForm } from './LeagueForm';
 import { MUSIC, trackLength } from '../audio/synth';
 import { drawGraphic } from '../engine/graphics';
 import type { Clip, GraphicLook, GraphicSpec } from '../model/types';
@@ -13,7 +14,7 @@ import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
 import { formatDuration, uid } from '../utils';
 
-type Step = 'style' | 'player' | 'roster' | 'opponent' | 'clips' | 'spotlight' | 'music';
+type Step = 'style' | 'player' | 'league' | 'roster' | 'opponent' | 'clips' | 'spotlight' | 'music';
 
 export const HEADLINES = ['Player of the Game', 'Athlete of the Week', 'Senior Night', 'MVP', 'Player Spotlight', 'Happy Birthday'];
 
@@ -71,6 +72,7 @@ export const styleOf = (id: ReelStyle) => REEL_STYLES.find((s) => s.id === id)!;
 /** The wizard steps a style needs. */
 function stepsFor(id: ReelStyle): Step[] {
   const s = styleOf(id);
+  if (s.subject === 'league') return ['style', 'league', 'clips', 'music'];
   if (s.roster === 'intros') return s.opponents ? ['style', 'player', 'roster', 'opponent', 'music'] : ['style', 'player', 'roster', 'music'];
   if (s.roster === 'credits') return ['style', 'player', 'roster', 'clips', 'music'];
   return s.spotlight ? ['style', 'player', 'clips', 'spotlight', 'music'] : ['style', 'player', 'clips', 'music'];
@@ -129,7 +131,8 @@ export function ReelWizard() {
     (rec?.input.clips ?? preset?.clips ?? []).map((c, i) => ({ ...c, key: `preset:${i}:${c.assetId}:${c.inPoint}`, label: `${assets[c.assetId]?.name ?? 'Play'} ${formatDuration(c.inPoint)}` })),
   );
   const [musicId, setMusicId] = useState<string | null>(rec ? rec.musicId : REEL_STYLES.find((s) => s.id === (preset?.style ?? 'recruiting'))!.music);
-  const [step, setStep] = useState<Step>(rec || preset?.style ? 'player' : 'style');
+  // Starting from a template (or editing a reel): straight to its details.
+  const [step, setStep] = useState<Step>(rec || preset?.style ? stepsFor(rec?.input.style ?? preset!.style!)[1] : 'style');
   const [building, setBuilding] = useState(false);
   const [follow, setFollow] = useState(rec?.follow ?? true);
   const [followPlayer, setFollowPlayer] = useState(rec?.followPlayer ?? true);
@@ -166,15 +169,20 @@ export function ReelWizard() {
     setMusicId(REEL_STYLES.find((x) => x.id === s)!.music);
   };
 
+  const league = meta.subject === 'league';
+  const leagueTeams = (info.league?.teams ?? []).filter((t) => t.name.trim()).length;
   const canNext =
     step === 'player'
       ? info.name.trim().length > 0
+      : step === 'league'
+        ? info.name.trim().length > 0 && (style !== 'gamenight' || leagueTeams >= 2)
       : step === 'roster'
         ? (meta.roster === 'intros' ? starters : named) > 0
         : step === 'clips'
-          ? clips.length > 0
+          ? clips.length > 0 || league
           : true;
-  const ready = meta.roster === 'intros' ? starters > 0 : clips.length > 0;
+  // A league promo can be all graphics.
+  const ready = league || (meta.roster === 'intros' ? starters > 0 : clips.length > 0);
 
   const build = async () => {
     setBuilding(true);
@@ -202,14 +210,14 @@ export function ReelWizard() {
         <header className="wiz-head">
           <div className="wiz-brand">
             <Icon name="volleyball" size={22} />
-            <h2 id="wiz-title">{rec ? 'Edit reel' : 'Highlight Reel'}</h2>
+            <h2 id="wiz-title">{rec ? 'Edit reel' : league ? 'League promo' : 'Highlight Reel'}</h2>
           </div>
           <ol className="scorebug" aria-label="Steps">
             {steps.map((s, i) => (
               <li key={s} className={i === idx ? 'on' : i < idx ? 'done' : ''}>
                 <button disabled={i > idx && !canNext} onClick={() => i <= idx + (canNext ? 1 : 0) && setStep(s)}>
                   <b>{i + 1}</b>
-                  <span>{s === 'player' && team ? 'team' : s === 'roster' && meta.opponents ? 'us' : s === 'opponent' ? 'them' : s}</span>
+                  <span>{s === 'player' && team ? 'team' : s === 'roster' && meta.opponents ? 'us' : s === 'opponent' ? 'them' : s === 'clips' && league ? 'footage' : s}</span>
                 </button>
               </li>
             ))}
@@ -222,6 +230,7 @@ export function ReelWizard() {
         <div className="wiz-body">
           {step === 'style' && <StylePicker style={style} onPick={pickStyle} info={info} setInfo={setInfo} />}
           {step === 'player' && <PlayerForm info={info} setInfo={setInfo} style={style} />}
+          {step === 'league' && <LeagueForm info={info} setInfo={setInfo} style={style} />}
           {step === 'roster' && <RosterStep info={info} setInfo={setInfo} lineup={meta.roster === 'intros'} />}
           {step === 'opponent' && <RosterStep info={info} setInfo={setInfo} lineup opponent />}
           {step === 'clips' && (
@@ -230,9 +239,9 @@ export function ReelWizard() {
               setClips={setClips}
               assets={assets}
               roster={meta.roster === 'credits' ? info.roster : null}
-              scoring={!!info.opponent.trim() || info.sets.length > 0}
+              scoring={!league && (!!info.opponent.trim() || info.sets.length > 0)}
               sport={sportOf(info.sport)}
-              follow={meta.aspect[0] < meta.aspect[1] || meta.aspect[0] * 5 === meta.aspect[1] * 4 ? { on: follow, set: setFollow } : null}
+              follow={!league && (meta.aspect[0] < meta.aspect[1] || meta.aspect[0] * 5 === meta.aspect[1] * 4) ? { on: follow, set: setFollow } : null}
               angles={style === 'potw'}
             />
           )}
@@ -280,6 +289,15 @@ export function ReelWizard() {
 
 const aspectLabel = ([w, h]: [number, number]) => (w === h ? '1:1' : w * 5 === h * 4 ? '4:5' : h > w ? '9:16' : '16:9');
 
+const SAMPLE_TEAMS: GraphicSpec['teams'] = [
+  ['Rockets', 0],
+  ['Storm', 1],
+  ['Blaze', 3],
+  ['Hawks', 5],
+  ['Waves', 2],
+  ['Thunder', 4],
+].map(([name, i]) => ({ name: name as string, colors: TEAM_COLORS[i as number].colors }));
+
 /** The signature graphic of each style, with sample words, for the style picker. */
 function sampleSpec(id: ReelStyle, colors: [string, string], look?: GraphicLook): { spec: GraphicSpec; at: number; duration: number } {
   const base = { colors, logo: 'logo', oppLogo: 'opp', look };
@@ -304,6 +322,26 @@ function sampleSpec(id: ReelStyle, colors: [string, string], look?: GraphicLook)
       return { spec: { ...base, type: 'victory', text: { kicker: 'FINAL', title: 'VICTORY', score: '3-1', sub: 'Rockets over Storm' } }, at: 2.6, duration: 4.6 };
     case 'potw':
       return { spec: { ...base, type: 'potw', text: { award: 'Play of the Week', week: 'Week 7', name: 'JORDAN LEE', sub: '#12  ·  Outside Hitter' } }, at: 2.6, duration: 4.6 };
+    case 'season':
+      return {
+        spec: { ...base, type: 'logoWall', text: { title: '6 TEAMS. ONE CROWN.' }, teams: SAMPLE_TEAMS },
+        at: 2.4,
+        duration: 5,
+      };
+    case 'gamenight':
+      return {
+        spec: { ...base, type: 'versus', oppColors: ['#b91c1c', '#f8fafc'], text: { kicker: 'GAME NIGHT', usName: 'STORM', themName: 'ROCKETS', usSub: '7-3', themSub: '8-2', sub: 'Sat Jan 10  ·  Metro Arena' } },
+        at: 2.4,
+        duration: 4.6,
+      };
+    case 'playoffs':
+      return { spec: { ...base, type: 'bracket', text: { title: '2026 PLAYOFFS', final: 'CHAMPION' }, teams: SAMPLE_TEAMS }, at: 4, duration: 6 };
+    case 'signup':
+      return {
+        spec: { ...base, type: 'signup', text: { title: 'REGISTRATION OPEN', url: 'https://example.com/register' }, rows: [['Divisions', 'U14 · U16 · Open'], ['Fee', '$250'], ['Register by', 'Dec 15']] },
+        at: 3,
+        duration: 6,
+      };
     case 'recap':
       return { spec: { ...base, type: 'final', text: { usName: 'Rockets', themName: 'Storm', result: 'Rockets win 3-1' }, sets: [[25, 21], [23, 25], [25, 19], [25, 22]] }, at: 3, duration: 4.5 };
     default:
@@ -329,7 +367,31 @@ function StylePicker({ style, onPick, info, setInfo }: { style: ReelStyle; onPic
       <h3 className="wiz-title">Pick your play</h3>
       <p className="wiz-lede">Broadcast-style graphics in your team colours: animated titles, player cards, score bugs and stingers. Everything stays editable.</p>
       <div className="style-cards">
-        {REEL_STYLES.map((s, i) => {
+        {REEL_STYLES.filter((s) => s.subject !== 'league').map((s, i) => {
+          const sample = sampleSpec(s.id, info.colors, info.look);
+          return (
+            <button
+              key={s.id}
+              className={`style-card ${style === s.id ? 'on' : ''}`}
+              onClick={() => onPick(s.id)}
+              onPointerEnter={() => setHover(s.id)}
+              onPointerLeave={() => setHover((h) => (h === s.id ? null : h))}
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
+              <span className={`style-frame ${s.aspect[1] > s.aspect[0] ? 'tall' : 'wide'}`}>
+                <GraphicPreview spec={sample.spec} width={s.aspect[0]} height={s.aspect[1]} at={sample.at} duration={sample.duration} animate={hover === s.id} logo={info.logo} oppLogo={info.oppLogo} />
+                <em>{aspectLabel(s.aspect)}</em>
+              </span>
+              <strong>{s.title}</strong>
+              <small>{s.blurb}</small>
+            </button>
+          );
+        })}
+      </div>
+      <h3 className="wiz-title">League promos</h3>
+      <p className="wiz-lede">Network-style spots for the whole league, like the season promos on sports TV: cinematic cold open, slamming type, every team, and the league sign-off.</p>
+      <div className="style-cards">
+        {REEL_STYLES.filter((s) => s.subject === 'league').map((s, i) => {
           const sample = sampleSpec(s.id, info.colors, info.look);
           return (
             <button

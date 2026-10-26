@@ -3,6 +3,7 @@
  * player cards, score bug, stat/roster/final boards and a closer. Everything is a pure function of
  * the clip's local time, so the preview and the export draw exactly the same frames.
  */
+import qrcode from 'qrcode-generator';
 import type { Clip, GraphicLook, GraphicSpec, TeleMark } from '../model/types';
 import { drawLivePhoto, livePhotoLayers } from './livePhoto';
 
@@ -2397,6 +2398,518 @@ function drawSummary(g: G) {
   panelWipe(g, seg(t, g.d - 0.45, g.d + 0.15));
 }
 
+// ---------- league promos ----------
+
+/** A team's tile badge: its logo, or its initials on its colours. */
+function teamBadge(g: G, t: { name: string; colors: [string, string]; logo?: string }, cx: number, cy: number, size: number) {
+  if (logoAt(g, t.logo, cx, cy, size)) return;
+  const { ctx } = g;
+  ctx.save();
+  ctx.fillStyle = t.colors[0];
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.46, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = size * 0.05;
+  ctx.strokeStyle = t.colors[1];
+  ctx.stroke();
+  ctx.restore();
+  headline(g, initials(t.name) || '?', cx, cy + size * 0.17, size * 0.42, { color: t.colors[1], shadow: false });
+}
+
+/**
+ * Kinetic type: the promo's words slamming in. `lines` are separated by "|". "slam" puts one line
+ * up at a time, huge, each landing with a flash; "stack" builds them into a block, alternating
+ * solid and outlined. Over footage it darkens the picture behind; `bg` gives it its own backdrop.
+ */
+function drawKinetic(g: G) {
+  const { ctx, W, H, S, t, d, spec } = g;
+  const lines = (spec.text.lines || '').split('|').map((l) => l.trim().toUpperCase()).filter(Boolean);
+  if (!lines.length) return;
+  const bg = spec.text.bg === '1';
+  const out = exitOf(g, 0.25);
+  if (bg) backdrop(g);
+  else if (spec.text.dim !== '0') {
+    ctx.save();
+    ctx.globalAlpha = 0.45 * eOut(seg(t, 0, 0.25)) * (1 - out);
+    const v = ctx.createRadialGradient(W / 2, H / 2, S * 0.2, W / 2, H / 2, Math.max(W, H) * 0.75);
+    v.addColorStop(0, 'rgba(0,0,0,0.55)');
+    v.addColorStop(1, 'rgba(0,0,0,0.95)');
+    ctx.fillStyle = v;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  const n = lines.length;
+  const step = Math.max(0.22, Math.min(0.7, (d - 0.5) / n));
+  const at = (i: number) => 0.06 + i * step;
+  if (spec.text.mode === 'stack') {
+    const size = Math.min(S * (g.portrait ? 0.17 : 0.16), (H * 0.7) / n / 1.08, ...lines.map((l) => fit(ctx, l, W * 0.86, S * 0.2)));
+    const gap = size * 1.08;
+    // The block centred: baselines sit a little below each line's middle.
+    const top = H / 2 - ((n - 1) * gap) / 2 + size * 0.36;
+    lines.forEach((line, i) => {
+      const p = eExpo(seg(t, at(i), at(i) + 0.3));
+      if (p <= 0) return;
+      const dir = i % 2 ? 1 : -1;
+      const y = top + i * gap;
+      ctx.save();
+      ctx.globalAlpha = 1 - out;
+      ctx.translate(dir * (1 - p) * W * 0.6 + dir * out * W * 0.3, 0);
+      // Motion streak behind a line still flying in.
+      if (p < 0.95) {
+        ctx.fillStyle = rgba(g.c2, 0.5 * (1 - p));
+        ctx.fillRect(dir > 0 ? W / 2 : 0, y - size * 0.5, W / 2, size * 0.18);
+      }
+      const solid = i % 2 === 0;
+      headline(g, line, W / 2, y, size, solid ? { color: '#fff' } : { color: 'rgba(0,0,0,0)', stroke: g.c2, shadow: false });
+      ctx.restore();
+    });
+  } else {
+    // One line at a time: the newest, landing big.
+    let i = 0;
+    while (i + 1 < n && t >= at(i + 1)) i++;
+    const line = lines[i];
+    const local = t - at(i);
+    if (local < 0) return;
+    const p = eExpo(seg(local, 0, 0.2));
+    const size = fit(ctx, line, W * 0.88, S * (g.portrait ? 0.24 : 0.3));
+    const scale = lerp(1.7, 1, p) * (1 + 0.02 * Math.max(0, 1 - local / 1.2));
+    // A small shake as it lands.
+    const shake = local < 0.2 ? Math.sin(local * 90) * S * 0.006 * (1 - local / 0.2) : 0;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, p * 1.4) * (1 - out);
+    ctx.translate(W / 2 + shake, H / 2 + size * 0.32);
+    ctx.scale(scale, scale);
+    // A colour split as it lands, the broadcast punch.
+    const split = (1 - seg(local, 0.04, 0.3)) * S * 0.012;
+    if (split > 0.5) {
+      headline(g, line, -split, 0, size, { color: 'rgba(0,229,255,0.7)', shadow: false });
+      headline(g, line, split, 0, size, { color: 'rgba(255,43,214,0.7)', shadow: false });
+    }
+    headline(g, line, 0, 0, size, { color: '#fff', sheen: seg(local, 0.15, 0.75) });
+    ctx.restore();
+    // The accent bar underlines it.
+    const bw = Math.min(W * 0.86, ctx.measureText(line).width) * eOut(seg(local, 0.1, 0.4));
+    ctx.save();
+    ctx.globalAlpha = 1 - out;
+    ctx.fillStyle = accent(g);
+    para(ctx, W / 2 - bw / 2, H / 2 + size * 0.5, bw, size * 0.08, size * 0.05);
+    ctx.fill();
+    // Impact flash.
+    const f = 1 - seg(local, 0.02, 0.16);
+    if (f > 0 && f < 1) {
+      ctx.globalAlpha = 0.35 * f;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+    if (spec.text.kicker && i === 0) label(g, spec.text.kicker.toUpperCase(), W / 2, H / 2 - size * 0.75, S * 0.03, g.c2, 'center', 800, 0.3);
+  }
+  if (bg) panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** Cinematic bars: the frame closes to 2.39:1 (a band in tall frames), with an optional caption. */
+function drawLetterbox(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  const target = portrait ? H * 0.12 : Math.max(0, (H - W / 2.39) / 2);
+  const p = eInOut(seg(t, 0, 0.5)) * (1 - eInOut(seg(t, d - 0.5, d)));
+  const bar = target * p;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, bar);
+  ctx.fillRect(0, H - bar, W, bar);
+  const cap = spec.text.caption;
+  if (cap && p > 0.9) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 0.6, 1.2)) * (1 - seg(t, d - 0.6, d - 0.2));
+    label(g, cap.toUpperCase(), W / 2, H - bar / 2, Math.min(bar * 0.32, S * 0.026), '#e5e7eb', 'center', 700, 0.45);
+    ctx.restore();
+  }
+}
+
+/** A glitch hit on a cut: slices of the team colours and broken scanlines, a few frames long. */
+function drawGlitch(g: G) {
+  const { ctx, W, H, t, d } = g;
+  const frame = Math.floor(t * 30);
+  const life = Math.sin(Math.PI * seg(t, 0, d));
+  const colors = [g.c1, g.c2, '#00e5ff', '#ff2bd6', '#ffffff'];
+  ctx.save();
+  for (let i = 0; i < 9; i++) {
+    const r = hash(frame * 31 + i * 7.3 + g.clipId.length);
+    if (r > 0.55 + 0.4 * (1 - life)) continue;
+    const y = hash(frame * 13 + i) * H;
+    const h = H * (0.01 + hash(frame + i * 3.1) * 0.07);
+    const x = (hash(frame * 7 + i) - 0.5) * W * 0.3;
+    ctx.globalAlpha = 0.35 + 0.5 * hash(i + frame);
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(x, y, W * (0.4 + hash(i * 9 + frame) * 0.8), h);
+  }
+  // Scanlines.
+  ctx.globalAlpha = 0.18 * life;
+  ctx.fillStyle = '#000';
+  for (let y = 0; y < H; y += 4) ctx.fillRect(0, y, W, 2);
+  ctx.restore();
+}
+
+/** Every team in the league: tiles flip in, then the league's logo lands over them. */
+function drawLogoWall(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const teams = (spec.teams ?? []).slice(0, 24);
+  const title = (spec.text.title || '').toUpperCase();
+  const top = title ? H * (portrait ? 0.16 : 0.15) : H * 0.08;
+  if (title) headline(g, title, W / 2, top, fit(ctx, title, W * 0.86, S * 0.085), { color: '#fff', reveal: seg(t, 0.05, 0.45) });
+  const n = Math.max(1, teams.length);
+  const areaTop = top + S * 0.06;
+  const areaH = H * 0.9 - areaTop;
+  const cols = Math.max(1, Math.round(Math.sqrt((n * W) / areaH)));
+  const rows = Math.ceil(n / cols);
+  const cell = Math.min((W * 0.9) / cols, areaH / rows);
+  const x0 = (W - cell * cols) / 2;
+  const y0 = areaTop + (areaH - cell * rows) / 2;
+  const land = d * 0.62;
+  teams.forEach((tm, i) => {
+    const start = 0.25 + hash(i * 3.7) * Math.min(1.2, 0.12 * n);
+    const p = eBack(seg(t, start, start + 0.45));
+    if (p <= 0) return;
+    const r = Math.floor(i / cols);
+    // Centre a short last row.
+    const inRow = r === rows - 1 ? n - r * cols : cols;
+    const c = i - r * cols;
+    const cx = x0 + (cols - inRow) * cell * 0.5 + (c + 0.5) * cell;
+    const cy = y0 + (r + 0.5) * cell;
+    const sz = cell * 0.86;
+    const dimmed = 1 - 0.55 * eOut(seg(t, land, land + 0.4));
+    ctx.save();
+    ctx.globalAlpha = dimmed;
+    ctx.translate(cx, cy);
+    ctx.scale(1, Math.max(0.01, p));
+    const gr = ctx.createLinearGradient(-sz / 2, -sz / 2, sz / 2, sz / 2);
+    gr.addColorStop(0, shade(tm.colors[0], 0.05));
+    gr.addColorStop(1, shade(tm.colors[0], -0.45));
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.roundRect(-sz / 2, -sz / 2, sz, sz, sz * 0.08);
+    ctx.fill();
+    ctx.fillStyle = tm.colors[1];
+    ctx.fillRect(-sz / 2, sz / 2 - sz * 0.05, sz, sz * 0.05);
+    teamBadge(g, tm, 0, -sz * 0.08, sz * 0.56);
+    const nm = tm.name.toUpperCase();
+    label(g, nm, 0, sz * 0.33, Math.min(sz * 0.09, (sz * 0.9) / Math.max(1, nm.length * 0.62)), '#fff', 'center', 800, 0.08);
+    ctx.restore();
+  });
+  // The league lands over its teams.
+  if (spec.logo) {
+    const k = seg(t, land, land + 0.6);
+    if (k > 0) logoSlam(g, spec.logo, W / 2, y0 + (cell * rows) / 2, Math.min(S * 0.42, cell * 2.2), land);
+  }
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** When: a kicker, the date huge, and where to be or watch. */
+function drawDateSlate(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  // Racing diagonal stripes in the accent.
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = accent(g);
+  const sw = S * 0.05;
+  const off = ((t * S * 0.4) % (sw * 4)) - sw * 4;
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(-Math.PI / 5);
+  for (let x = -Math.max(W, H) + off; x < Math.max(W, H); x += sw * 4) ctx.fillRect(x, -Math.max(W, H), sw, Math.max(W, H) * 2);
+  ctx.restore();
+  const kicker = (spec.text.kicker || '').toUpperCase();
+  const title = (spec.text.title || '').toUpperCase();
+  const cy = H * (portrait ? 0.46 : 0.5);
+  const ts = fit(ctx, title, W * 0.88, S * (portrait ? 0.2 : 0.24));
+  if (kicker) {
+    const ks = S * 0.042;
+    font(ctx, ks, 900);
+    const kw = ctx.measureText(kicker).width + ks * 1.4;
+    const kp = eExpo(seg(t, 0.05, 0.45));
+    ctx.save();
+    ctx.fillStyle = accent(g);
+    para(ctx, W / 2 - kw / 2, cy - ts * 0.95 - ks * 1.2, kw * kp, ks * 1.35, ks * 0.3);
+    ctx.fill();
+    ctx.restore();
+    if (kp > 0.6) headline(g, kicker, W / 2, cy - ts * 0.95 - ks * 0.2, ks, { color: g.ink, shadow: false });
+  }
+  const tp = eBack(seg(t, 0.35, 0.8));
+  if (tp > 0) {
+    ctx.save();
+    ctx.translate(W / 2, cy);
+    ctx.scale(Math.max(0.01, tp), Math.max(0.01, tp));
+    headline(g, title, 0, ts * 0.36, ts, { color: '#fff', sheen: seg(t, 1, 1.8) });
+    ctx.restore();
+  }
+  const sub = spec.text.sub || '';
+  const where = spec.text.where || '';
+  ctx.save();
+  ctx.globalAlpha = eOut(seg(t, 0.9, 1.4));
+  if (sub) label(g, sub.toUpperCase(), W / 2, cy + ts * 0.62, Math.min(S * 0.045, (W * 0.9) / Math.max(1, sub.length * 0.6)), '#fff', 'center', 800, 0.12);
+  if (where) label(g, where.toUpperCase(), W / 2, cy + ts * 0.62 + S * 0.07, Math.min(S * 0.032, (W * 0.9) / Math.max(1, where.length * 0.62)), g.c2, 'center', 800, 0.18);
+  ctx.restore();
+  logoAt(g, spec.logo, W - S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 0.3, 0.8)));
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** The league's sign-off: logo, name, slogan, where to find it, and who presents it. */
+function drawEndSlate(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const name = (spec.text.title || '').toUpperCase();
+  const cy = H * (portrait ? 0.4 : 0.38);
+  const ls = S * (portrait ? 0.42 : 0.36);
+  // Light rays behind the logo.
+  ctx.save();
+  ctx.globalAlpha = 0.22 * eOut(seg(t, 0.2, 1));
+  ctx.translate(W / 2, cy);
+  ctx.rotate(t * 0.15);
+  ctx.fillStyle = rgba(g.c2, 0.5);
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate((Math.PI * 2) / 12);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.max(W, H), -S * 0.06);
+    ctx.lineTo(Math.max(W, H), S * 0.06);
+    ctx.fill();
+  }
+  ctx.restore();
+  if (!logoSlam(g, spec.logo, W / 2, cy, ls, 0.25) && name) {
+    const k = eBack(seg(t, 0.25, 0.75));
+    if (k > 0) {
+      ctx.save();
+      ctx.translate(W / 2, cy);
+      ctx.scale(k, k);
+      ctx.fillStyle = g.c1;
+      ctx.beginPath();
+      ctx.arc(0, 0, ls * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = ls * 0.04;
+      ctx.strokeStyle = g.c2;
+      ctx.stroke();
+      ctx.restore();
+      headline(g, initials(name), W / 2, cy + ls * 0.15, ls * 0.4, { color: g.c2, shadow: false, reveal: k });
+    }
+  }
+  let y = cy + ls * 0.62;
+  if (name) {
+    const ns = fit(ctx, name, W * 0.88, S * 0.1);
+    headline(g, name, W / 2, y + ns * 0.8, ns, { color: '#fff', reveal: seg(t, 0.7, 1.1), sheen: seg(t, 1.4, 2.2) });
+    y += ns * 1.1;
+  }
+  const tag = spec.text.tagline || '';
+  if (tag) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1, 1.5));
+    label(g, tag.toUpperCase(), W / 2, y + S * 0.03, Math.min(S * 0.036, (W * 0.9) / Math.max(1, tag.length * 0.62)), g.c2, 'center', 800, 0.22);
+    ctx.restore();
+    y += S * 0.07;
+  }
+  const url = spec.text.url || '';
+  if (url) {
+    const us = Math.min(S * 0.036, (W * 0.8) / Math.max(1, url.length * 0.6));
+    font(ctx, us, 800, SANS);
+    const uw = ctx.measureText(url).width + us * 1.6;
+    const up = eExpo(seg(t, 1.2, 1.6));
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.beginPath();
+    ctx.roundRect(W / 2 - (uw * up) / 2, y + S * 0.02, uw * up, us * 1.8, us * 0.9);
+    ctx.fill();
+    ctx.restore();
+    if (up > 0.8) label(g, url, W / 2, y + S * 0.02 + us * 0.9, us, '#fff', 'center', 800, 0.04);
+  }
+  const sponsor = spec.text.sponsor || '';
+  if (sponsor) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 1.6, 2.1));
+    label(g, 'PRESENTED BY', W / 2, H - S * 0.11, S * 0.02, 'rgba(255,255,255,0.6)', 'center', 700, 0.4);
+    label(g, sponsor.toUpperCase(), W / 2, H - S * 0.07, Math.min(S * 0.034, (W * 0.8) / Math.max(1, sponsor.length * 0.62)), '#fff', 'center', 900, 0.14);
+    ctx.restore();
+  }
+  // Holds to the end: a promo's last frame is its sign-off.
+  void d;
+}
+
+/** The playoff bracket: seeds slide in, the lines draw towards the final, the champion's slot waits. */
+function drawBracket(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const title = (spec.text.title || 'PLAYOFFS').toUpperCase();
+  const top = H * (portrait ? 0.13 : 0.14);
+  headline(g, title, W / 2, top, fit(ctx, title, W * 0.8, S * 0.1), { color: '#fff', reveal: seg(t, 0.05, 0.45), sheen: seg(t, 2.2, 3) });
+  const all = (spec.teams ?? []).slice(0, 8);
+  const size = all.length > 4 ? 8 : 4;
+  const seeds = Array.from({ length: size }, (_, i) => all[i]);
+  // First-round pairs: 1 v 8, 4 v 5, 2 v 7, 3 v 6 (or 1 v 4, 2 v 3).
+  const order = size === 8 ? [0, 7, 3, 4, 1, 6, 2, 5] : [0, 3, 1, 2];
+  const rounds = Math.log2(size) + 1;
+  const areaTop = top + S * 0.08;
+  const areaH = H * 0.92 - areaTop;
+  // Tall frames give round one (the names) half the width; the later rounds share the rest.
+  const firstW = portrait ? W * 0.5 : (W * 0.92) / rounds;
+  const laterW = portrait ? (W * 0.42) / (rounds - 1) : firstW;
+  const x0 = W * 0.04;
+  const colX = (r: number) => x0 + (r ? firstW + (r - 1) * laterW : 0);
+  const slotH = Math.min(areaH / size, S * 0.11);
+  const slotOf = (r: number) => (r ? laterW : firstW) * 0.82;
+  const slotW = slotOf(0);
+  const yOf = (round: number, k: number) => areaTop + (areaH / (size >> round)) * (k + 0.5);
+  const lineP = eInOut(seg(t, 1.2, 2.6));
+  ctx.save();
+  ctx.strokeStyle = rgba(g.c2, 0.9);
+  ctx.lineWidth = Math.max(2, S * 0.004);
+  for (let r = 0; r < rounds - 1; r++) {
+    const pr = Math.max(0, Math.min(1, lineP * (rounds - 1) - r));
+    if (pr <= 0) continue;
+    for (let k = 0; k < size >> (r + 1); k++) {
+      const xa = colX(r) + slotOf(r);
+      const xb = colX(r + 1);
+      const ya = yOf(r, k * 2);
+      const yb = yOf(r, k * 2 + 1);
+      const ym = yOf(r + 1, k);
+      const xm = (xa + xb) / 2;
+      ctx.beginPath();
+      ctx.moveTo(xa, ya);
+      ctx.lineTo(lerp(xa, xm, Math.min(1, pr * 2)), ya);
+      ctx.moveTo(xa, yb);
+      ctx.lineTo(lerp(xa, xm, Math.min(1, pr * 2)), yb);
+      if (pr > 0.5) {
+        const q = (pr - 0.5) * 2;
+        ctx.moveTo(xm, ya);
+        ctx.lineTo(xm, yb);
+        ctx.moveTo(xm, ym);
+        ctx.lineTo(lerp(xm, xb, q), ym);
+      }
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  // Round one: the seeds.
+  order.forEach((s, k) => {
+    const tm = seeds[s];
+    const start = 0.35 + k * 0.08;
+    const p = eExpo(seg(t, start, start + 0.4));
+    if (p <= 0) return;
+    const y = yOf(0, k);
+    ctx.save();
+    ctx.translate(-(1 - p) * W * 0.4, 0);
+    ctx.globalAlpha = p;
+    ctx.fillStyle = tm ? shade(tm.colors[0], -0.25) : 'rgba(255,255,255,0.06)';
+    para(ctx, x0, y - slotH * 0.42, slotW, slotH * 0.84, slotH * 0.15);
+    ctx.fill();
+    if (tm) {
+      ctx.fillStyle = tm.colors[1];
+      para(ctx, x0, y - slotH * 0.42, slotH * 0.07, slotH * 0.84, slotH * 0.15);
+      ctx.fill();
+      label(g, String(s + 1), x0 + slotH * 0.35, y, slotH * 0.3, 'rgba(255,255,255,0.65)', 'center', 900, 0);
+      teamBadge(g, tm, x0 + slotH * 0.95, y, slotH * 0.7);
+      const nm = tm.name.toUpperCase();
+      headline(g, nm, x0 + slotH * 1.45, y + slotH * 0.15, fit(ctx, nm, slotW - slotH * 1.65, slotH * 0.42), { align: 'left', shadow: false });
+    } else label(g, 'BYE', x0 + slotW / 2, y, slotH * 0.28, 'rgba(255,255,255,0.4)', 'center', 800, 0.3);
+    ctx.restore();
+  });
+  // Later rounds: empty slots waiting, the final one glowing.
+  for (let r = 1; r < rounds; r++) {
+    const p = eOut(seg(t, 1.4 + r * 0.35, 1.9 + r * 0.35));
+    if (p <= 0) continue;
+    for (let k = 0; k < size >> r; k++) {
+      const y = yOf(r, k);
+      const x = colX(r);
+      const w = slotOf(r);
+      const last = r === rounds - 1;
+      ctx.save();
+      ctx.globalAlpha = p;
+      ctx.fillStyle = last ? accent(g) : 'rgba(255,255,255,0.08)';
+      para(ctx, x, y - slotH * 0.42, w, slotH * 0.84, slotH * 0.15);
+      ctx.fill();
+      if (last) headline(g, spec.text.final || 'CHAMPION', x + w / 2, y + slotH * 0.16, fit(ctx, spec.text.final || 'CHAMPION', w * 0.85, slotH * 0.46), { color: g.ink, shadow: false, sheen: seg(t, 2.6, 3.4) });
+      ctx.restore();
+    }
+  }
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+const qrCache = new Map<string, boolean[][]>();
+/** The QR code for `text` (cached): rows of dark modules. */
+function qrFor(text: string): boolean[][] {
+  let m = qrCache.get(text);
+  if (!m) {
+    const q = qrcode(0, 'M');
+    q.addData(text);
+    q.make();
+    const n = q.getModuleCount();
+    m = Array.from({ length: n }, (_, r) => Array.from({ length: n }, (_, c) => q.isDark(r, c)));
+    qrCache.set(text, m);
+  }
+  return m;
+}
+
+/** Sign up: what, when and how much, with a QR code to the registration page. */
+function drawSignup(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const title = (spec.text.title || 'REGISTRATION OPEN').toUpperCase();
+  const top = H * (portrait ? 0.12 : 0.15);
+  headline(g, title, W / 2, top, fit(ctx, title, W * 0.88, S * 0.1), { color: '#fff', reveal: seg(t, 0.05, 0.45), sheen: seg(t, 1.8, 2.6) });
+  const rows = (spec.rows ?? []).filter(([k, v]) => k && v);
+  const url = spec.text.url || '';
+  const qrSize = url ? S * (portrait ? 0.42 : 0.42) : 0;
+  // Rows on the left (above, in tall frames), the code on the right (below).
+  const listX = portrait ? W * 0.08 : W * 0.07;
+  const listW = portrait ? W * 0.84 : W * 0.5;
+  const listTop = top + S * 0.09;
+  const rh = Math.min(S * 0.12, ((portrait ? H * 0.38 : H * 0.7) - S * 0.05) / Math.max(1, rows.length));
+  rows.forEach(([k, v], i) => {
+    const start = 0.45 + i * 0.15;
+    const p = eExpo(seg(t, start, start + 0.4));
+    if (p <= 0) return;
+    const y = listTop + i * rh;
+    ctx.save();
+    ctx.globalAlpha = p;
+    ctx.translate(-(1 - p) * W * 0.3, 0);
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    para(ctx, listX, y + rh * 0.08, listW, rh * 0.84, rh * 0.12);
+    ctx.fill();
+    ctx.fillStyle = accent(g);
+    para(ctx, listX, y + rh * 0.08, rh * 0.07, rh * 0.84, rh * 0.12);
+    ctx.fill();
+    label(g, k.toUpperCase(), listX + rh * 0.3, y + rh * 0.34, rh * 0.17, g.c2, 'left', 800, 0.2);
+    const vs = Math.min(rh * 0.3, (listW - rh * 0.5) / Math.max(1, v.length * 0.55));
+    label(g, v, listX + rh * 0.3, y + rh * 0.64, vs, '#fff', 'left', 800, 0.02);
+    ctx.restore();
+  });
+  if (url) {
+    const m = qrFor(url);
+    const qx = portrait ? W / 2 - qrSize / 2 : W * 0.93 - qrSize;
+    const qy = portrait ? listTop + rows.length * rh + S * 0.04 : listTop + S * 0.02;
+    const p = eBack(seg(t, 0.8, 1.3));
+    if (p > 0) {
+      ctx.save();
+      ctx.translate(qx + qrSize / 2, qy + qrSize / 2);
+      ctx.scale(p, p);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.roundRect(-qrSize / 2, -qrSize / 2, qrSize, qrSize, qrSize * 0.06);
+      ctx.fill();
+      const n = m.length;
+      const cell = (qrSize * 0.84) / n;
+      const o = -cell * n * 0.5;
+      ctx.fillStyle = '#0b0b10';
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (m[r][c]) ctx.fillRect(o + c * cell, o + r * cell, cell + 0.5, cell + 0.5);
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = eOut(seg(t, 1.2, 1.6));
+      label(g, 'SCAN TO SIGN UP', qx + qrSize / 2, qy + qrSize + S * 0.035, S * 0.024, g.c2, 'center', 800, 0.3);
+      label(g, url, qx + qrSize / 2, qy + qrSize + S * 0.075, Math.min(S * 0.03, (qrSize * 1.4) / Math.max(1, url.length * 0.58)), '#fff', 'center', 800, 0.02);
+      ctx.restore();
+    }
+  }
+  logoAt(g, spec.logo, portrait ? W - S * 0.1 : S * 0.1, portrait ? H - S * 0.1 : H - S * 0.1, S * 0.12, eOut(seg(t, 0.3, 0.8)));
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -2415,10 +2928,18 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   badge: drawBadge,
   commit: drawCommit,
   summary: drawSummary,
+  kinetic: drawKinetic,
+  letterbox: drawLetterbox,
+  glitch: drawGlitch,
+  logoWall: drawLogoWall,
+  dateSlate: drawDateSlate,
+  endSlate: drawEndSlate,
+  bracket: drawBracket,
+  signup: drawSignup,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
-export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit', 'summary'];
+export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit', 'summary', 'logoWall', 'dateSlate', 'endSlate', 'bracket', 'signup'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {

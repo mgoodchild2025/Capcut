@@ -43,6 +43,17 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 
 In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw** freezes the frame at the playhead and adds a telestrator; **Draw over video** draws on the moving picture. Pick circle, arrow, line or freehand and a colour from the bar under the preview; marks draw themselves in one after another on playback. A clip with a spotlight can also **Follow this player** from its spotlight panel. Tracking follows the player relative to the court (it allows for the camera panning) and keeps track of teammates in the same kit, so a crossing or a run past a teammate doesn't send the marker to the wrong player. If it ever does, pause where it goes astray, tap **Fix the tracking here** and tap the right player; each fix holds the tracking to them at that moment, and **Clear fixes** undoes them.
 
+### League promos
+
+Network-style spots for a whole league, in the manner of the season promos on sports TV, under **League promos** on the Home screen:
+
+- **Season launch**: a cinematic cold open (slow motion behind letterbox bars, the first words slamming in), the slogan a punch at a time over fast cuts with glitch hits, a wall of every team's logo with the league's landing over them, opening night, and the league sign-off.
+- **Game night**: the visitors at the home team, billed in their colours with their records, then when and where to watch.
+- **Playoffs**: the bracket draws itself in, seeds and all, to the champion's empty slot.
+- **Registration**: an upbeat spot ending on divisions, dates, fee and deadline, with a QR code to the sign-up page.
+
+Give the league's name, logo, colours, slogan (each short sentence gets its own beat), when, where, website and sponsor, and its teams (name, colours, logo; paste a list of names to add them all). Footage is optional: without it, the words carry the spot full screen. Every cut lands on the music's beat. Choose 16:9 for TV and YouTube or 9:16 for Stories and Reels. Reel settings changes the details afterwards.
+
 ### Changing a reel after it's built
 
 **Reel** in the top bar opens Reel settings. Change the name, number, position, club, school, opponent, headline, colours, graphics look, logos or music, and every title and card in the reel follows. Anything you've typed over by hand stays as you left it, and Undo puts everything back. A new song can re-cut the reel to its beat when the cuts are as built; otherwise it's swapped in place and your cuts stay. **Edit reel** reopens the wizard with everything as you chose it (template, details, plays, spotlights, music) and builds the reel again, carrying your hand edits and tracking fixes over. Reels made before Reel settings existed can still change colours, look, logo and music, and swap names with Replace words.

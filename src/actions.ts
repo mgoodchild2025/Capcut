@@ -1070,6 +1070,12 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     const fromDataUrl = async (url: string | undefined, name: string) => (url ? importBlob(await (await fetch(url)).blob(), name) : null);
     const logo = await fromDataUrl(w.info.logo, 'Team logo.png');
     const oppLogo = await fromDataUrl(w.info.oppLogo, 'Opponent logo.png');
+    // League promos: each team's logo.
+    const teamLogos: Record<string, string> = {};
+    for (const t of w.info.league?.teams ?? []) {
+      const a = t.logo ? await fromDataUrl(t.logo, `${t.name.trim() || 'Team'} logo.png`) : null;
+      if (a) teamLogos[t.key] = a.id;
+    }
     report(++step / steps);
 
     // Cut players out of their photos (on-device model, downloaded once). If that isn't possible,
@@ -1167,6 +1173,7 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
         crowd: crowd?.id,
         logo: logo?.id,
         oppLogo: oppLogo?.id,
+        teamLogos,
         photo: photo ? finalId(photo.assetId) : undefined,
         players: Object.fromEntries(media.filter((m) => m.key !== 'photo').map((m) => [m.key, finalId(m.assetId)])),
         cutouts,
@@ -1411,6 +1418,20 @@ export async function applyReelSettings(ch: ReelSettingsChange): Promise<boolean
     const cards = { ...was.cards };
     if (ch.info.logo !== was.info.logo) cards.logo = await fromDataUrl(ch.info.logo, 'Team logo.png');
     if (ch.info.oppLogo !== was.info.oppLogo) cards.oppLogo = await fromDataUrl(ch.info.oppLogo, 'Opponent logo.png');
+    // League teams: a new or changed logo comes in; the rest keep theirs.
+    if (ch.info.league) {
+      const before = new Map((was.info.league?.teams ?? []).map((t) => [t.key, t.logo]));
+      const teamLogos: Record<string, string> = {};
+      for (const t of ch.info.league.teams) {
+        const kept = was.cards.teamLogos?.[t.key];
+        if (t.logo && t.logo === before.get(t.key) && kept) teamLogos[t.key] = kept;
+        else if (t.logo) {
+          const id = await fromDataUrl(t.logo, `${t.name.trim() || 'Team'} logo.png`);
+          if (id) teamLogos[t.key] = id;
+        }
+      }
+      cards.teamLogos = teamLogos;
+    }
     const songChanged = ch.musicId !== rec.musicId;
     if (songChanged) cards.music = ch.musicId ? (await musicFor(ch.musicId))?.id : undefined;
     const next = { ...was, info: ch.info, cards };

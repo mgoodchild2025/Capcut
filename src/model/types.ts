@@ -42,7 +42,7 @@ export interface Track {
 
 export type ClipKind = 'video' | 'image' | 'audio' | 'text' | 'sticker' | 'graphic';
 
-export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator' | 'versus' | 'victory' | 'potw' | 'badge' | 'commit' | 'summary';
+export type GraphicType = 'open' | 'stinger' | 'lowerThird' | 'scoreBug' | 'playerCard' | 'stats' | 'roster' | 'final' | 'closer' | 'replay' | 'telestrator' | 'versus' | 'victory' | 'potw' | 'badge' | 'commit' | 'summary' | 'kinetic' | 'letterbox' | 'glitch' | 'logoWall' | 'dateSlate' | 'endSlate' | 'bracket' | 'signup';
 
 /** A telestrator drawing: points are fractions of the frame. Circles are [centre, edge]; arrows and lines [from, to]. */
 export interface TeleMark {
@@ -67,6 +67,8 @@ export interface GraphicSpec {
   rows?: [string, string][];
   /** Roster wall tiles. */
   players?: { number: string; name: string; photo?: string }[];
+  /** League teams (logo wall, bracket): name, colours and logo asset id. */
+  teams?: { name: string; colors: [string, string]; logo?: string }[];
   /** Set scores, [ours, theirs]. */
   sets?: [number, number][];
   /** The clip's photo has a transparent background: show the player cut out rather than in a window. */

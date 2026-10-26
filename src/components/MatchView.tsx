@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { addRalliesToTimeline, analyzeMatchIn, playlistToReel, playlistToTimeline, reelFromRallies, savePlaylist, updatePlaylist, updateRally } from '../actions';
+import { addRalliesToTimeline, analyzeMatchIn, importFiles, playlistToReel, playlistToTimeline, reelFromRallies, savePlaylist, updatePlaylist, updateRally } from '../actions';
 import type { MatchRally, PlaylistItem, RallyAction } from '../model/types';
 import { ralliesWith, scoreMatch } from '../stats/matchStats';
 import { useEditor } from '../store';
@@ -138,6 +138,24 @@ export function MatchView() {
     setNaming(null);
     setPicked([]);
   };
+  // A game straight from the device: in it goes, and the rallies are found straight away.
+  const addGame = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const game = (await importFiles(files)).find((a) => a.kind === 'video');
+    if (!game) return;
+    setAssetId(game.id);
+    setCurrent(null);
+    setPicked([]);
+    setFilter(null);
+    setTab('rallies');
+    if (!useEditor.getState().project.matches?.[game.id]) void analyzeMatchIn(game.id);
+  };
+  const gamePicker = (label: string, primary: boolean) => (
+    <label className={`btn ${primary ? 'primary' : ''} ${task ? 'disabled' : ''}`} aria-disabled={!!task}>
+      <Icon name="upload" /> <span className={primary ? '' : 'hide-xs'}>{label}</span>
+      <input type="file" accept="video/*" hidden disabled={!!task} onChange={(e) => void addGame(e.target.files)} />
+    </label>
+  );
   const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const nudge = (r: MatchRally, edge: 'start' | 'end', d: number) => {
     const v = Math.max(0, Math.min(asset?.duration ?? Infinity, r[edge] + d));
@@ -162,17 +180,31 @@ export function MatchView() {
               ))}
             </select>
           )}
+          {asset && gamePicker('Add a game', false)}
           <button className="icon-btn" onClick={close} aria-label="Close" disabled={analysing}>
             <Icon name="close" />
           </button>
         </header>
         <div className="wiz-body match-body">
           {!asset ? (
-            <p className="wiz-lede">Import a game video first (Media), then come back here to break it down rally by rally.</p>
+            <div className="match-empty">
+              <p className="wiz-lede">
+                Choose a full game video. ClipForge finds every rally (whistles, crowd and movement on court show where each point starts and ends), then you can watch them back to
+                back, tag the stats and pick the best.
+              </p>
+              {gamePicker('Choose the game video', true)}
+            </div>
           ) : (
             <>
               <section className="match-player">
-                <video ref={video} src={(plItem && assets[plItem.assetId]?.url) || asset.url} onLoadedMetadata={loaded} playsInline controls={false} onClick={() => (video.current?.paused ? void video.current.play() : video.current?.pause())} />
+                <video
+                  ref={video}
+                  src={(plItem && assets[plItem.assetId]?.url) || asset.url}
+                  onLoadedMetadata={loaded}
+                  playsInline
+                  controls={false}
+                  onClick={() => (video.current?.paused ? void video.current.play() : video.current?.pause())}
+                />
                 <div className="match-transport">
                   <button className="icon-btn" aria-label="Previous rally" disabled={idx <= 0} onClick={() => go(rallies[idx - 1])}>
                     <Icon name="stepBack" size={16} />
@@ -253,7 +285,7 @@ export function MatchView() {
                 )}
                 {tab === 'stats' && match && score && (
                   <>
-                    {(match.rallies.some((r) => r.won || r.actions?.length)) && (
+                    {match.rallies.some((r) => r.won || r.actions?.length) && (
                       <button className={`btn summary-toggle ${showSummary ? 'on' : ''}`} aria-expanded={showSummary} onClick={() => setShowSummary((x) => !x)}>
                         <Icon name="image" /> Game summary for families
                       </button>
@@ -262,13 +294,7 @@ export function MatchView() {
                     <StatsPanel match={match} score={score} watch={watch} />
                   </>
                 )}
-                {tab === 'playlists' && (
-                  <Playlists
-                    playing={pl}
-                    play={playItem}
-                    onDone={close}
-                  />
-                )}
+                {tab === 'playlists' && <Playlists playing={pl} play={playItem} onDone={close} />}
                 {filter && tab === 'rallies' && (
                   <div className="watch-filter">
                     <span>
@@ -284,7 +310,7 @@ export function MatchView() {
                     {match ? (
                       <>
                         <strong>
-                          {rallies.length} rallies · {formatDuration(total)} of play
+                          {rallies.length} {rallies.length === 1 ? 'rally' : 'rallies'} · {formatDuration(total)} of play
                         </strong>
                         <div className="segmented" role="radiogroup" aria-label="Order">
                           <button role="radio" aria-checked={sort === 'time'} className={sort === 'time' ? 'on' : ''} onClick={() => setSort('time')}>
@@ -365,59 +391,61 @@ export function MatchView() {
             </>
           )}
         </div>
-        <footer className="wiz-foot">
-          {naming !== null ? (
-            <form
-              className="pl-name"
-              onSubmit={(e) => {
-                e.preventDefault();
-                saveTo(naming);
-              }}
-            >
-              <input
-                className="text-input"
-                autoFocus
-                value={naming}
-                onChange={(e) => setNaming(e.target.value)}
-                list="pl-names"
-                aria-label="Playlist name"
-                placeholder="Playlist name"
-                onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), setNaming(null))}
-              />
-              <datalist id="pl-names">
-                {playlists?.map((x) => (
-                  <option key={x.id} value={x.name} />
-                ))}
-              </datalist>
-              <button className="btn primary" type="submit" disabled={!naming.trim()}>
-                Save {toSave.length}
-              </button>
-              <button className="btn" type="button" onClick={() => setNaming(null)}>
-                Cancel
-              </button>
-            </form>
-          ) : (
-            <span className="wiz-summary">{picked.length ? `${picked.length} picked` : match ? 'Tick rallies to use them' : asset ? asset.name : ''}</span>
-          )}
-          <div className="wiz-actions">
-            {naming === null && (
-              <button
-                className="btn pl-save"
-                disabled={!toSave.length}
-                onClick={() => setNaming(filter && !picked.length ? filter.title : (playlists?.[playlists.length - 1]?.name ?? 'Highlights'))}
-                title="Keep these moments in a playlist: for teaching, or the best of the season"
+        {asset && (
+          <footer className="wiz-foot">
+            {naming !== null ? (
+              <form
+                className="pl-name"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveTo(naming);
+                }}
               >
-                <Icon name="star" /> Save to playlist
-              </button>
+                <input
+                  className="text-input"
+                  autoFocus
+                  value={naming}
+                  onChange={(e) => setNaming(e.target.value)}
+                  list="pl-names"
+                  aria-label="Playlist name"
+                  placeholder="Playlist name"
+                  onKeyDown={(e) => e.key === 'Escape' && (e.stopPropagation(), setNaming(null))}
+                />
+                <datalist id="pl-names">
+                  {playlists?.map((x) => (
+                    <option key={x.id} value={x.name} />
+                  ))}
+                </datalist>
+                <button className="btn primary" type="submit" disabled={!naming.trim()}>
+                  Save {toSave.length}
+                </button>
+                <button className="btn" type="button" onClick={() => setNaming(null)}>
+                  Cancel
+                </button>
+              </form>
+            ) : (
+              <span className="wiz-summary">{picked.length ? `${picked.length} picked` : match ? 'Tick rallies to use them' : asset ? asset.name : ''}</span>
             )}
-            <button className="btn" disabled={!picked.length} onClick={() => (addRalliesToTimeline(assetId, picked), close())}>
-              <Icon name="plus" /> Add to timeline
-            </button>
-            <button className="btn primary go" disabled={!picked.length} onClick={() => reelFromRallies(assetId, picked)}>
-              <Icon name="wand" /> Make a reel
-            </button>
-          </div>
-        </footer>
+            <div className="wiz-actions">
+              {naming === null && (
+                <button
+                  className="btn pl-save"
+                  disabled={!toSave.length}
+                  onClick={() => setNaming(filter && !picked.length ? filter.title : (playlists?.[playlists.length - 1]?.name ?? 'Highlights'))}
+                  title="Keep these moments in a playlist: for teaching, or the best of the season"
+                >
+                  <Icon name="star" /> Save to playlist
+                </button>
+              )}
+              <button className="btn" disabled={!picked.length} onClick={() => (addRalliesToTimeline(assetId, picked), close())}>
+                <Icon name="plus" /> Add to timeline
+              </button>
+              <button className="btn primary go" disabled={!picked.length} onClick={() => reelFromRallies(assetId, picked)}>
+                <Icon name="wand" /> Make a reel
+              </button>
+            </div>
+          </footer>
+        )}
       </div>
     </div>
   );
@@ -465,7 +493,12 @@ function Playlists({ playing, play, onDone }: { playing: { id: string; i: number
             </div>
             {expanded && (
               <>
-                <input className="text-input pl-rename" aria-label="Playlist name" defaultValue={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && updatePlaylist(p.id, { name: e.target.value.trim() })} />
+                <input
+                  className="text-input pl-rename"
+                  aria-label="Playlist name"
+                  defaultValue={p.name}
+                  onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && updatePlaylist(p.id, { name: e.target.value.trim() })}
+                />
                 <ol className="pl-items">
                   {p.items.map((it, i) => {
                     const thumb = it.rallyId ? matches?.[it.assetId]?.rallies.find((r) => r.id === it.rallyId)?.thumb : undefined;

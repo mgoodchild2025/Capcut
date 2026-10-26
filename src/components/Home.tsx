@@ -134,6 +134,25 @@ export function Home() {
             Start <Icon name="chevronRight" size={16} />
           </span>
         </button>
+        <button
+          className="poster-banner match-banner"
+          onClick={() => {
+            // Game footage is landscape.
+            newProject(1920, 1080);
+            useEditor.setState({ match: {}, leftTab: 'volleyball' });
+          }}
+        >
+          <span className="poster-banner-art" aria-hidden="true">
+            <Icon name="film" size={26} />
+          </span>
+          <span>
+            <strong>Break down a match</strong>
+            <small>Every rally of a full game, found for you: watch the game without the dead time, tag stats, share a game summary and save playlists.</small>
+          </span>
+          <span className="tpl-go">
+            Start <Icon name="chevronRight" size={16} />
+          </span>
+        </button>
         <button className="poster-banner" onClick={() => useEditor.setState({ posters: {} })}>
           <span className="poster-banner-art" aria-hidden="true">
             <Icon name="image" size={26} />

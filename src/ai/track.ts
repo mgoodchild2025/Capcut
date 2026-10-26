@@ -1,15 +1,15 @@
 import { ALL_FORMATS, BlobSource, CanvasSink, Input } from 'mediabunny';
 import type { Asset } from '../model/types';
-import { trackPoint, type FollowPoint, type TrackFrame } from './trackCore';
+import { trackPoint, type Anchor, type FollowPoint, type TrackFrame } from './trackCore';
 
 const WIDTH = 256;
 const RATE = 10; // frames per second
 
 /**
- * Follows the player tapped at (x, y) at source time `at` through `from`..`to` of a video.
+ * Follows the player tapped at (x, y) at source time `at` (and at any corrections) through `from`..`to` of a video.
  * On-device, no download: small colour frames and template matching, a second or two per play.
  */
-export async function trackPlayer(asset: Asset, from: number, to: number, at: { t: number; x: number; y: number }, signal?: AbortSignal): Promise<FollowPoint[]> {
+export async function trackPlayer(asset: Asset, from: number, to: number, at: Anchor | Anchor[], signal?: AbortSignal): Promise<FollowPoint[]> {
   const blob = await (await fetch(asset.url)).blob();
   const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
   try {

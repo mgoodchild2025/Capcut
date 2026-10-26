@@ -28,7 +28,7 @@ export interface EditorState {
   /** A long-running job (reverse, cutout...) shown as a progress pill; progress null is indeterminate. */
   task: { label: string; progress: number | null; cancel?: () => void } | null;
   /** Preview click mode: sample a key colour or place a spotlight on the selected clip. */
-  pick: 'chroma' | 'spotlight' | null;
+  pick: 'chroma' | 'spotlight' | 'follow' | null;
   /** Voiceover recording in progress, started at this timeline time. */
   recording: { start: number } | null;
   /** Graphics & posters studio; `kind` preselects a poster. */

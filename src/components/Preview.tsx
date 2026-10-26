@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { updateSelected } from '../actions';
+import { fixFollowAt, updateSelected } from '../actions';
 import { engine } from '../engine/engine';
 import { setTelestratorEditing } from '../engine/graphics';
 import { hitTest, type DrawBox } from '../engine/render';
 import { projectDuration } from '../model/ops';
+import { sourceTimeAt } from '../model/timing';
 import type { TeleMark } from '../model/types';
 import { beginGesture, endGesture, select, setShowStats, toast, useEditor } from '../store';
 import { Icon } from '../ui/Icon';
@@ -128,12 +129,22 @@ export function Preview() {
     return { fx: lx / box.w + 0.5, fy: ly / box.h + 0.5 };
   };
 
-  const handlePick = (mode: 'chroma' | 'spotlight', pt: Pt) => {
+  const handlePick = (mode: 'chroma' | 'spotlight' | 'follow', pt: Pt) => {
     const st = useEditor.getState();
     const clip = st.project.clips.find((c) => c.id === st.selectedId);
     const f = pointInSelected(pt);
     if (!clip || !f || f.fx < 0 || f.fx > 1 || f.fy < 0 || f.fy > 1) {
       toast('Tap inside the selected clip');
+      return;
+    }
+    if (mode === 'follow') {
+      const local = st.currentTime - clip.start;
+      if (local < 0 || local > clip.duration) {
+        toast('Move the playhead into the clip first');
+        return;
+      }
+      useEditor.setState({ pick: null });
+      void fixFollowAt(sourceTimeAt(clip, st.currentTime), f.fx, f.fy);
       return;
     }
     if (mode === 'chroma') {
@@ -346,7 +357,7 @@ export function Preview() {
           {pick && (
             <div className="pick-banner" role="status">
               <Icon name={pick === 'chroma' ? 'eyedropper' : 'target'} size={16} />
-              {pick === 'chroma' ? 'Tap the colour to remove' : 'Tap your player'}
+              {pick === 'chroma' ? 'Tap the colour to remove' : pick === 'follow' ? 'Tap your player, at this moment' : 'Tap your player'}
               <button onPointerDown={(e) => e.stopPropagation()} onClick={() => useEditor.setState({ pick: null })}>
                 Cancel
               </button>

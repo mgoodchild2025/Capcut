@@ -215,6 +215,8 @@ export interface Follow {
   path: { t: number; x: number; y: number }[];
   color: string;
   label: string;
+  /** Corrections: taps on the right player at moments the tracking went astray (source time, frame fractions). */
+  fixes?: { t: number; x: number; y: number }[];
 }
 
 export interface Marker {

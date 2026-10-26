@@ -22,6 +22,24 @@ export function MobileWorkspace() {
     if (!clip && sheet?.kind === 'edit') setSheet(null);
   }, [clip, sheet]);
 
+  // Tapping something in the preview (a colour, the player): the sheet steps aside for the tap,
+  // and the edit sheet comes back once it's done.
+  const pick = useEditor((s) => s.pick);
+  const [resume, setResume] = useState<Sheet>(null);
+  useEffect(() => {
+    if (pick && sheet) {
+      setResume(sheet);
+      setSheet(null);
+    } else if (!pick && resume) {
+      // After the tap's own click has landed, or it would close the sheet straight away.
+      const t = setTimeout(() => {
+        setSheet(resume);
+        setResume(null);
+      }, 350);
+      return () => clearTimeout(t);
+    }
+  }, [pick, sheet, resume]);
+
   const openTab = (tab: LeftTab) => {
     useEditor.setState({ leftTab: tab });
     setSheet({ kind: 'tab', tab });

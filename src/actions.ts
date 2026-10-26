@@ -675,22 +675,44 @@ export async function followSelectedPlayer(): Promise<void> {
     const { trackPlayer } = await import('./ai/track');
     const { followKeyframes, needsReframe } = await import('./ai/reframe').then(async (m) => ({ ...m, ...(await import('./ai/reframeCore')) }));
     const { sourceSpan } = await import('./model/timing');
-    const path = await trackPlayer(asset, sel.inPoint, sel.inPoint + sourceSpan(sel) + 0.1, { t: sel.inPoint + 0.05, x: sp.x, y: sp.y }, signal);
+    const fixes = sel.follow?.fixes ?? [];
+    const path = await trackPlayer(asset, sel.inPoint, sel.inPoint + sourceSpan(sel) + 0.1, [{ t: sel.inPoint + 0.05, x: sp.x, y: sp.y }, ...fixes], signal);
     if (!path.length) throw new Error('No frames to follow');
     const { width: W, height: H } = get().project.settings;
     edit((p) => {
       const c = p.clips.find((x) => x.id === sel.id);
       if (!c) return p;
-      let patch: Partial<Clip> = { follow: { path, color: sp.color, label: sp.label } };
+      let patch: Partial<Clip> = { follow: { path, color: sp.color, label: sp.label, fixes: fixes.length ? fixes : undefined } };
       // Pan only footage that's cropped by the frame, and only if the clip isn't already animated sideways.
-      if (c.fit === 'cover' && needsReframe(asset, W, H) && !c.keyframes?.x?.length) {
+      // (A follow being redone replaces its own pan.)
+      if (c.fit === 'cover' && needsReframe(asset, W, H) && (!c.keyframes?.x?.length || sel.follow)) {
         const keys = followKeyframes(c, asset, W, H, path);
         if (keys.length) patch = { ...patch, transform: { ...c.transform, x: keys[0].v }, keyframes: { ...c.keyframes, x: keys } };
       }
       return updateClipById(p, sel.id, patch);
     });
-    toast('Following your player through the clip');
+    toast(fixes.length ? 'Following your player, with your corrections' : 'Following your player through the clip');
   });
+}
+
+/**
+ * The tracking went to someone else: the player is really at (x, y) (frame fractions) at
+ * source time `t`. Follows again, keeping to every correction so far.
+ */
+export async function fixFollowAt(t: number, x: number, y: number): Promise<void> {
+  const sel = selectedClip(get());
+  if (!sel?.follow) return;
+  // A new tap near an earlier one replaces it.
+  const fixes = [...(sel.follow.fixes ?? []).filter((f) => Math.abs(f.t - t) > 0.15), { t: +t.toFixed(3), x: +x.toFixed(4), y: +y.toFixed(4) }].sort((a, b) => a.t - b.t);
+  edit((p) => updateClipById(p, sel.id, { follow: { ...sel.follow!, fixes } }));
+  await followSelectedPlayer();
+}
+
+export async function clearFollowFixes(): Promise<void> {
+  const sel = selectedClip(get());
+  if (!sel?.follow?.fixes?.length) return;
+  edit((p) => updateClipById(p, sel.id, { follow: { ...sel.follow!, fixes: undefined } }));
+  await followSelectedPlayer();
 }
 
 export function stopFollowingSelected() {

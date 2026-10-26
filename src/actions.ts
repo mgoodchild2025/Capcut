@@ -1014,6 +1014,30 @@ export interface WizardResult {
   playerReels?: import('./templates/reel').ReelStyle;
   /** Track each spotted player through their play (a marker follows them; narrow reels pan with them). */
   followPlayer?: boolean;
+  /** Building the project's reel again (Edit reel): edits made to its clips carry over. */
+  rebuild?: boolean;
+}
+
+/** The song for a reel: your own (its beats found once), or a library track rendered with its beats. */
+async function musicFor(musicId: string): Promise<Asset | null> {
+  const own = musicId.startsWith('asset:') ? get().assets[musicId.slice(6)] : undefined;
+  if (own) {
+    if (!own.beats?.length) {
+      try {
+        const { analyzeBeats } = await import('./audio/beats');
+        const { beats, bpm } = await analyzeBeats(own);
+        patchAsset(own.id, { beats, bpm });
+      } catch (e) {
+        console.warn('No beats found', e);
+      }
+    }
+    return get().assets[own.id];
+  }
+  const { blob, beats, bpm } = await renderSound('music', musicId);
+  const music = await importBlob(blob, await soundName('music', musicId));
+  if (!music) return null;
+  patchAsset(music.id, { beats, bpm });
+  return get().assets[music.id];
 }
 
 /** Generates cards and sound, then lays out the reel in the current project (undoable). */
@@ -1038,7 +1062,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     // Plays to auto-follow: wide footage going into a narrower frame, with no spotted player to centre on.
     const { needsReframe, trackAction } = await import('./ai/reframe');
     const toTrack = w.follow ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => !c.spotlight && assetOf(c.assetId) && needsReframe(assetOf(c.assetId)!, W, H)) : [];
-    const toFollow = w.followPlayer !== false ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => c.spotlight && assetOf(c.assetId)?.kind === 'video') : [];
+    // (Plays already followed, when a reel is built again, keep their paths.)
+    const toFollow = w.followPlayer !== false ? w.clips.map((c, i) => [c, i] as const).filter(([c]) => c.spotlight && !c.path?.length && assetOf(c.assetId)?.kind === 'video') : [];
     let step = 0;
     const steps = 4 + toCut.length + toTrack.length + toFollow.length + (w.musicId ? 1 : 0);
 
@@ -1097,28 +1122,8 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
     }
 
     let music: Asset | null = null;
-    const own = w.musicId?.startsWith('asset:') ? assetOf(w.musicId.slice(6)) : undefined;
-    if (own) {
-      // Your own song: find its beats so beat-cut reels land on them.
-      music = own;
-      if (!own.beats?.length) {
-        try {
-          const { analyzeBeats } = await import('./audio/beats');
-          const { beats, bpm } = await analyzeBeats(own);
-          patchAsset(own.id, { beats, bpm });
-          music = get().assets[own.id];
-        } catch (e) {
-          console.warn('No beats found', e);
-        }
-      }
-      report(++step / steps);
-    } else if (w.musicId) {
-      const { blob, beats, bpm } = await renderSound('music', w.musicId);
-      music = await importBlob(blob, await soundName('music', w.musicId));
-      if (music) {
-        patchAsset(music.id, { beats, bpm });
-        music = get().assets[music.id];
-      }
+    if (w.musicId) {
+      music = await musicFor(w.musicId);
       report(++step / steps);
     }
     const sfx = async (id: string) => importBlob((await renderSound('sfx', id)).blob, await soundName('sfx', id));
@@ -1168,9 +1173,17 @@ export async function buildReelFromWizard(w: WizardResult): Promise<boolean> {
         depths,
       },
     };
-    const built = buildReel(input, get().assets);
     const current = get().project;
-    commit({ ...built, id: current.id, createdAt: current.createdAt });
+    const record = { musicId: w.musicId, follow: w.follow, followPlayer: w.followPlayer };
+    if (w.rebuild && current.reel) {
+      const { rebuildReel } = await import('./templates/reelEdit');
+      const next = rebuildReel(current, get().assets, input);
+      commit({ ...next, reel: { ...next.reel!, ...record } });
+    } else {
+      // Recorded, so its details can be changed later (Reel settings).
+      const built = buildReel(input, get().assets);
+      commit({ ...built, id: current.id, createdAt: current.createdAt, reel: { input, ...record, built: built.clips.map((c) => c.id) } });
+    }
     if (w.playerReels && style.roster === 'credits') madePlayerReels = await savePlayerReels(input, w.playerReels);
     engine.pause();
     // Start at the top, so Play runs the reel from its first frame.
@@ -1374,4 +1387,90 @@ export function playlistToReel(id: string) {
   const pl = get().project.playlists?.find((x) => x.id === id);
   if (!pl) return;
   useEditor.setState({ match: null, wizard: { clips: pl.items.map((it) => ({ assetId: it.assetId, inPoint: it.start, duration: it.end - it.start })) }, leftTab: 'volleyball' });
+}
+
+// ---------- reel settings ----------
+
+export interface ReelSettingsChange {
+  info: import('./templates/reel').ReelInfo;
+  musicId: string | null;
+  /** Cut to the new song's beat (only when the cuts are as built). */
+  recut?: boolean;
+}
+
+/**
+ * Changes a built reel's details (names, colours, look, logos, music) across every title and
+ * card it made. Titles typed over by hand keep their text. Undoable.
+ */
+export async function applyReelSettings(ch: ReelSettingsChange): Promise<boolean> {
+  const rec = get().project.reel;
+  if (!rec) return false;
+  const ok = await runTask('Updating your reel', async () => {
+    const fromDataUrl = async (url: string | undefined, name: string) => (url ? (await importBlob(await (await fetch(url)).blob(), name))?.id : undefined);
+    const was = rec.input;
+    const cards = { ...was.cards };
+    if (ch.info.logo !== was.info.logo) cards.logo = await fromDataUrl(ch.info.logo, 'Team logo.png');
+    if (ch.info.oppLogo !== was.info.oppLogo) cards.oppLogo = await fromDataUrl(ch.info.oppLogo, 'Opponent logo.png');
+    const songChanged = ch.musicId !== rec.musicId;
+    if (songChanged) cards.music = ch.musicId ? (await musicFor(ch.musicId))?.id : undefined;
+    const next = { ...was, info: ch.info, cards };
+    const { changeReel, cutsUntouched, rebuildReel } = await import('./templates/reelEdit');
+    const current = get().project;
+    const recut = !!ch.recut && songChanged && cutsUntouched(current, get().assets);
+    const out = recut ? rebuildReel(current, get().assets, next) : changeReel(current, get().assets, next).project;
+    commit({ ...out, reel: { ...out.reel!, musicId: ch.musicId } });
+    toast(recut ? 'Reel updated and cut to the new song' : 'Reel updated');
+    return true;
+  });
+  return !!ok;
+}
+
+/**
+ * For reels made before their details were recorded: colours, look, logo and song across the
+ * timeline, and a find-and-replace over the titles' words (in the case each title uses).
+ */
+export async function applyLooseReelSettings(ch: { colors?: [string, string]; look?: import('./model/types').GraphicLook; logo?: string; musicId?: string | null; replace?: [string, string][] }): Promise<boolean> {
+  const ok = await runTask('Updating your reel', async () => {
+    const logoId = ch.logo ? (await importBlob(await (await fetch(ch.logo)).blob(), 'Team logo.png'))?.id : undefined;
+    const song = ch.musicId ? await musicFor(ch.musicId) : null;
+    const pairs = (ch.replace ?? []).filter(([a, b]) => a.trim() && a.trim() !== b.trim());
+    const swap = (text: string) =>
+      pairs.reduce((t, [from, to]) => {
+        const re = new RegExp(`\\b${from.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+        return t.replace(re, (m) => (m === m.toUpperCase() && m !== m.toLowerCase() ? to.trim().toUpperCase() : to.trim()));
+      }, text);
+    const assets = get().assets;
+    edit((p) => ({
+      ...p,
+      name: swap(p.name),
+      // No music: the music track goes (it has a beat; the sound effects don't).
+      clips: p.clips.filter((c) => !(ch.musicId === null && c.kind === 'audio' && c.assetId && assets[c.assetId]?.bpm)).map((c) => {
+        let out = c;
+        if (c.graphic) {
+          const g = c.graphic;
+          out = {
+            ...out,
+            name: swap(c.name),
+            graphic: {
+              ...g,
+              text: Object.fromEntries(Object.entries(g.text).map(([k, v]) => [k, swap(v)])),
+              players: g.players?.map((pl) => ({ ...pl, name: swap(pl.name) })),
+              colors: ch.colors ?? g.colors,
+              look: ch.look ?? g.look,
+              logo: logoId && g.logo ? logoId : g.logo,
+            },
+          };
+        }
+        if (c.kind === 'text' && c.text) out = { ...out, text: { ...c.text, content: swap(c.text.content) } };
+        if (ch.colors && c.spotlight) out = { ...out, spotlight: { ...c.spotlight, color: ch.colors[1] } };
+        if (ch.colors && c.follow) out = { ...out, follow: { ...c.follow, color: ch.colors[1] } };
+        // The song: the music track (it has a beat; the sound effects don't).
+        if (song && c.kind === 'audio' && c.assetId && assets[c.assetId]?.bpm) out = { ...out, assetId: song.id, name: song.name, duration: Math.max(0.1, Math.min(c.duration, song.duration - c.inPoint)) };
+        return out;
+      }),
+    }));
+    toast('Reel updated');
+    return true;
+  });
+  return !!ok;
 }

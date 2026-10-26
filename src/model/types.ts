@@ -293,6 +293,18 @@ export interface Project {
   matches?: Record<string, MatchData>;
   /** Teaching and highlight playlists built from the matches. */
   playlists?: Playlist[];
+  /** What the reel on this timeline was built from, so its details can be changed afterwards. */
+  reel?: ReelRecord;
+}
+
+/** A reel as the wizard built it: its input (plays tracked, cards made) and the clips it made. */
+export interface ReelRecord {
+  input: import('../templates/reel').ReelInput;
+  musicId: string | null;
+  follow?: boolean;
+  followPlayer?: boolean;
+  /** Ids of the clips the build made, in the order it made them. */
+  built: string[];
 }
 
 /** One point of a match, found by analysing the game video (source seconds). */

@@ -22,6 +22,7 @@ import { useIsMobile } from '../ui/useMediaQuery';
 import { Library } from './Library';
 import { MobileWorkspace } from './MobileWorkspace';
 import { ReelWizard } from './ReelWizard';
+import { ReelSettings } from './ReelSettings';
 import { HelpDialog } from './HelpDialog';
 import { Preview } from './Preview';
 import { GameToReel } from './GameToReel';
@@ -38,10 +39,13 @@ export function Editor() {
   const wizard = useEditor((s) => !!s.wizard);
   const match = useEditor((s) => !!s.match);
   const quick = useEditor((s) => !!s.quick);
+  const reelSettings = useEditor((s) => s.reelSettings);
+  // A reel (or anything with titles) can have its names, colours, logos and music changed in one place.
+  const isReel = useEditor((s) => !!s.project.reel || s.project.clips.some((c) => c.graphic));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || exporting || useEditor.getState().wizard || useEditor.getState().match || useEditor.getState().quick) return;
+      if (isTypingTarget(e.target) || exporting || useEditor.getState().wizard || useEditor.getState().match || useEditor.getState().quick || useEditor.getState().reelSettings) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
       if (mod && key === 'z') {
@@ -138,6 +142,11 @@ export function Editor() {
           <SaveState />
         </div>
         <div className="topbar-right">
+          {isReel && (
+            <button className="btn" aria-label="Reel settings" title="Names, colours, logos and music for the whole reel" onClick={() => useEditor.setState({ reelSettings: true })}>
+              <Icon name="wand" /> <span className="hide-xs">Reel</span>
+            </button>
+          )}
           <button className="icon-btn hide-mobile" title="Shortcuts (?)" aria-label="Keyboard shortcuts" onClick={() => setHelp(true)}>
             <Icon name="keyboard" />
           </button>
@@ -160,6 +169,7 @@ export function Editor() {
       )}
       {exporting && <ExportDialog onClose={() => setExporting(false)} />}
       {wizard && <ReelWizard />}
+      {reelSettings && <ReelSettings />}
       {match && <MatchView />}
       {quick && <GameToReel />}
       {help && <HelpDialog onClose={() => setHelp(false)} />}

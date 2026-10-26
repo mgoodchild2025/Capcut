@@ -34,7 +34,9 @@ export interface EditorState {
   /** Graphics & posters studio; `kind` preselects a poster. */
   posters: { kind?: import('./templates/posters').PosterKind } | null;
   /** Highlight reel wizard; `style` preselects a template. */
-  wizard: { style?: import('./templates/reel').ReelStyle; clips?: import('./templates/reel').ReelClip[] } | null;
+  wizard: { style?: import('./templates/reel').ReelStyle; clips?: import('./templates/reel').ReelClip[]; edit?: boolean } | null;
+  /** Reel settings: the built reel's names, colours, logos and music. */
+  reelSettings: boolean;
   /** Game to reel: a whole game into a finished reel in a few taps. */
   quick: Record<string, never> | null;
   /** The match screen: a game video's rallies. */
@@ -106,6 +108,7 @@ export const useEditor = create<EditorState>(() => ({
   pick: null,
   recording: null,
   wizard: null,
+  reelSettings: false,
   posters: null,
   match: null,
   quick: null,

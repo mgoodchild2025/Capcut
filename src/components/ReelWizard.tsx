@@ -66,7 +66,7 @@ export async function logoDataUrl(file: File): Promise<string> {
   }
 }
 
-const styleOf = (id: ReelStyle) => REEL_STYLES.find((s) => s.id === id)!;
+export const styleOf = (id: ReelStyle) => REEL_STYLES.find((s) => s.id === id)!;
 
 /** The wizard steps a style needs. */
 function stepsFor(id: ReelStyle): Step[] {
@@ -120,18 +120,20 @@ interface WClip extends ReelClip {
 export function ReelWizard() {
   const preset = useEditor((s) => s.wizard);
   const assets = useEditor((s) => s.assets);
-  const [style, setStyle] = useState<ReelStyle>(preset?.style ?? 'recruiting');
-  const [info, setInfo] = useState<ReelInfo>(loadInfo);
+  // Edit reel: everything as this project's reel was built.
+  const [rec] = useState(() => (preset?.edit ? useEditor.getState().project.reel : undefined));
+  const [style, setStyle] = useState<ReelStyle>(rec?.input.style ?? preset?.style ?? 'recruiting');
+  const [info, setInfo] = useState<ReelInfo>(() => rec?.input.info ?? loadInfo());
   // Plays handed over from the match screen start out picked.
   const [clips, setClips] = useState<WClip[]>(() =>
-    (preset?.clips ?? []).map((c, i) => ({ ...c, key: `preset:${i}:${c.assetId}:${c.inPoint}`, label: `${assets[c.assetId]?.name ?? 'Play'} ${formatDuration(c.inPoint)}` })),
+    (rec?.input.clips ?? preset?.clips ?? []).map((c, i) => ({ ...c, key: `preset:${i}:${c.assetId}:${c.inPoint}`, label: `${assets[c.assetId]?.name ?? 'Play'} ${formatDuration(c.inPoint)}` })),
   );
-  const [musicId, setMusicId] = useState<string | null>(REEL_STYLES.find((s) => s.id === (preset?.style ?? 'recruiting'))!.music);
-  const [step, setStep] = useState<Step>(preset?.style ? 'player' : 'style');
+  const [musicId, setMusicId] = useState<string | null>(rec ? rec.musicId : REEL_STYLES.find((s) => s.id === (preset?.style ?? 'recruiting'))!.music);
+  const [step, setStep] = useState<Step>(rec || preset?.style ? 'player' : 'style');
   const [building, setBuilding] = useState(false);
-  const [follow, setFollow] = useState(true);
-  const [followPlayer, setFollowPlayer] = useState(true);
-  const [playerReels, setPlayerReels] = useState<ReelStyle | null>('hype');
+  const [follow, setFollow] = useState(rec?.follow ?? true);
+  const [followPlayer, setFollowPlayer] = useState(rec?.followPlayer ?? true);
+  const [playerReels, setPlayerReels] = useState<ReelStyle | null>(rec ? null : 'hype');
 
   const meta = styleOf(style);
   const team = meta.subject === 'team';
@@ -180,10 +182,12 @@ export function ReelWizard() {
     const ok = await buildReelFromWizard({
       style,
       info,
-      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay }) => ({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay })),
+      // (A play already followed keeps its path, unless its spotlight moved.)
+      clips: meta.roster === 'intros' ? [] : clips.map(({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay, path }) => ({ assetId, inPoint, duration, tag, spotlight, player, score, set, replay, path })),
       musicId,
       follow,
       followPlayer,
+      rebuild: !!rec,
       playerReels: meta.roster === 'credits' && playerReels ? playerReels : undefined,
     });
     setBuilding(false);
@@ -198,7 +202,7 @@ export function ReelWizard() {
         <header className="wiz-head">
           <div className="wiz-brand">
             <Icon name="volleyball" size={22} />
-            <h2 id="wiz-title">Highlight Reel</h2>
+            <h2 id="wiz-title">{rec ? 'Edit reel' : 'Highlight Reel'}</h2>
           </div>
           <ol className="scorebug" aria-label="Steps">
             {steps.map((s, i) => (
@@ -262,7 +266,7 @@ export function ReelWizard() {
               </button>
             ) : (
               <button className="btn primary go" disabled={building || !ready} onClick={() => void build()}>
-                <Icon name="wand" /> {building ? 'Building...' : 'Build my reel'}
+                <Icon name="wand" /> {building ? 'Building...' : rec ? 'Rebuild my reel' : 'Build my reel'}
               </button>
             )}
           </div>
@@ -1190,7 +1194,7 @@ function SpotlightStep({
     const r = e.currentTarget.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
-    setClips((list) => list.map((c) => (c.key === clip.key ? { ...c, spotlight: { x, y } } : c)));
+    setClips((list) => list.map((c) => (c.key === clip.key ? { ...c, spotlight: { x, y }, path: undefined } : c)));
   };
   const a = assets[clip.assetId];
   return (
@@ -1211,7 +1215,7 @@ function SpotlightStep({
         <span>
           Play {Math.min(i, clips.length - 1) + 1} of {clips.length}
           {clip.spotlight && (
-            <button className="link-btn" onClick={() => setClips((list) => list.map((c) => (c.key === clip.key ? { ...c, spotlight: undefined } : c)))}>
+            <button className="link-btn" onClick={() => setClips((list) => list.map((c) => (c.key === clip.key ? { ...c, spotlight: undefined, path: undefined } : c)))}>
               {' '}
               · Clear
             </button>
@@ -1272,7 +1276,7 @@ function PlayerReelsOption({ clips, roster, value, onChange }: { clips: WClip[];
 
 // ---------- step 5: music ----------
 
-function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; setMusicId: (id: string | null) => void; style: ReelStyle }) {
+export function MusicStep({ musicId, setMusicId, style, heading = true }: { musicId: string | null; setMusicId: (id: string | null) => void; style: ReelStyle; heading?: boolean }) {
   const [playing, setPlaying] = useState<string | null>(null);
   const [genre, setGenre] = useState<MusicGenre | null>(null);
   const recommended = REEL_STYLES.find((s) => s.id === style)!.music;
@@ -1300,7 +1304,7 @@ function MusicStep({ musicId, setMusicId, style }: { musicId: string | null; set
   const generated = MUSIC.some((m) => m.id === musicId);
   return (
     <section className="wiz-step">
-      <h3 className="wiz-title">Set the tempo</h3>
+      {heading && <h3 className="wiz-title">Set the tempo</h3>}
       <p className="wiz-lede">{['hype', 'team', 'lineup', 'victory', 'matchup'].includes(style) ? 'Cuts lock to the beat of the track you pick. ' : ''}Studio recordings, free to post anywhere.</p>
       <GenreChips value={genre} onChange={setGenre} />
       <div className="music-picks">

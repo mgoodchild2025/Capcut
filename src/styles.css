@@ -5834,3 +5834,34 @@ input[type='range']::-moz-range-thumb {
     width: 100%;
   }
 }
+
+/* Break down a match, from Home */
+.match-banner {
+  background: linear-gradient(120deg, rgba(34, 197, 94, 0.26), rgba(15, 118, 110, 0.28) 55%, rgba(0, 194, 209, 0.2));
+}
+
+.match-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  max-width: 560px;
+  padding: 12px 4px;
+}
+
+.match-view .wiz-head label.btn {
+  margin-left: auto;
+}
+
+.match-view .wiz-head label.btn + .icon-btn {
+  margin-left: 0;
+}
+
+label.btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.match-view .wiz-head .match-source + label.btn {
+  margin-left: 0;
+}

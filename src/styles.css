@@ -5767,3 +5767,70 @@ input[type='range']::-moz-range-thumb {
     flex-basis: 100%;
   }
 }
+
+/* Reel settings */
+.reel-settings {
+  max-width: 760px;
+}
+
+.rs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rs-body .wiz-step {
+  padding: 0;
+}
+
+.rs-logos {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rs-replace {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rs-replace-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.rs-recut {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 194, 209, 0.1);
+}
+
+.rs-recut span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rs-recut small {
+  color: var(--text-3);
+}
+
+.reel-settings .wiz-head {
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (max-width: 760px) {
+  .reel-settings .wiz-foot {
+    flex-wrap: wrap;
+  }
+
+  .reel-settings .wiz-foot > .btn {
+    width: 100%;
+  }
+}

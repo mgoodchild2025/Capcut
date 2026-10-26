@@ -53,6 +53,53 @@ export function remapMatches(m: Project['matches'], map: (id: string) => string)
   return Object.fromEntries(Object.values(m).map((x) => [map(x.assetId), { ...x, assetId: map(x.assetId) }]));
 }
 
+/** Media a recorded reel was built from (to build it again when its details change). */
+export function reelRefs(r: Project['reel']): string[] {
+  if (!r) return [];
+  const c = r.input.cards;
+  return [
+    ...r.input.clips.map((x) => x.assetId),
+    c.music,
+    c.whoosh,
+    c.impact,
+    c.crowd,
+    c.logo,
+    c.oppLogo,
+    c.photo,
+    ...Object.values(c.players ?? {}),
+    ...(c.cutouts ?? []),
+    ...Object.entries(c.depths ?? {}).flat(),
+  ].filter((x): x is string => !!x);
+}
+
+/** A recorded reel, its media at new ids. */
+export function remapReel(r: Project['reel'], map: (id: string) => string): Project['reel'] {
+  if (!r) return r;
+  const c = r.input.cards;
+  const m = (id?: string) => id && map(id);
+  return {
+    ...r,
+    musicId: r.musicId?.startsWith('asset:') ? `asset:${map(r.musicId.slice(6))}` : r.musicId,
+    input: {
+      ...r.input,
+      clips: r.input.clips.map((x) => ({ ...x, assetId: map(x.assetId) })),
+      cards: {
+        ...c,
+        music: m(c.music),
+        whoosh: m(c.whoosh),
+        impact: m(c.impact),
+        crowd: m(c.crowd),
+        logo: m(c.logo),
+        oppLogo: m(c.oppLogo),
+        photo: m(c.photo),
+        players: c.players && Object.fromEntries(Object.entries(c.players).map(([k, v]) => [k, map(v)])),
+        cutouts: c.cutouts?.map(map),
+        depths: c.depths && Object.fromEntries(Object.entries(c.depths).map(([k, v]) => [map(k), map(v)])),
+      },
+    },
+  };
+}
+
 const fileName = (name: string) => `${name.replace(/[^\w\- ]+/g, '').trim() || 'project'}${PROJECT_EXT}`;
 
 /** Packs a stored draft into a single file. */
@@ -64,7 +111,7 @@ export async function draftToFile(id: string): Promise<File> {
 
 export function packProject(raw: { project: Project; thumbnail?: string; assets: { meta: Omit<Asset, 'url'>; blob: Blob }[] }): File {
   // Only media the timeline uses (clips, and what graphics draw) and analysed games; deleted clips can leave orphans behind.
-  const used = new Set([...raw.project.clips.flatMap(mediaRefs), ...Object.keys(raw.project.matches ?? {}), ...(raw.project.playlists ?? []).flatMap((pl) => pl.items.map((it) => it.assetId))]);
+  const used = new Set([...raw.project.clips.flatMap(mediaRefs), ...Object.keys(raw.project.matches ?? {}), ...(raw.project.playlists ?? []).flatMap((pl) => pl.items.map((it) => it.assetId)), ...reelRefs(raw.project.reel)]);
   const assets = raw.assets.filter((a) => used.has(a.meta.id));
   const header: Header = {
     app: 'ClipForge',
@@ -117,6 +164,7 @@ export async function importProjectFile(file: Blob): Promise<string> {
     clips: project.clips.map((c) => remapClip(c, (id) => ids.get(id) ?? id)),
     matches: remapMatches(project.matches, (id) => ids.get(id) ?? id),
     playlists: project.playlists?.map((pl) => ({ ...pl, items: pl.items.map((it) => ({ ...it, assetId: ids.get(it.assetId) ?? it.assetId })) })),
+    reel: remapReel(project.reel, (id) => ids.get(id) ?? id),
   };
   await saveDraftRaw(
     next,

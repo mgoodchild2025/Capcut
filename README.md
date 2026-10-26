@@ -43,6 +43,10 @@ Every reel is built from a **broadcast graphics package** in your team colours, 
 
 In the editor, the **Sports** tab has the **analyst's pen**: **Freeze and draw** freezes the frame at the playhead and adds a telestrator; **Draw over video** draws on the moving picture. Pick circle, arrow, line or freehand and a colour from the bar under the preview; marks draw themselves in one after another on playback. A clip with a spotlight can also **Follow this player** from its spotlight panel. Tracking follows the player relative to the court (it allows for the camera panning) and keeps track of teammates in the same kit, so a crossing or a run past a teammate doesn't send the marker to the wrong player. If it ever does, pause where it goes astray, tap **Fix the tracking here** and tap the right player; each fix holds the tracking to them at that moment, and **Clear fixes** undoes them.
 
+### Changing a reel after it's built
+
+**Reel** in the top bar opens Reel settings. Change the name, number, position, club, school, opponent, headline, colours, graphics look, logos or music, and every title and card in the reel follows. Anything you've typed over by hand stays as you left it, and Undo puts everything back. A new song can re-cut the reel to its beat when the cuts are as built; otherwise it's swapped in place and your cuts stay. **Edit reel** reopens the wizard with everything as you chose it (template, details, plays, spotlights, music) and builds the reel again, carrying your hand edits and tracking fixes over. Reels made before Reel settings existed can still change colours, look, logo and music, and swap names with Replace words.
+
 ## Editor features
 
 - **Projects and drafts**:

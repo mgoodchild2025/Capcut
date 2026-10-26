@@ -54,3 +54,25 @@ describe('analysed games in project files', () => {
     expect(remapMatches(undefined, (x) => x)).toBeUndefined();
   });
 });
+
+describe('a recorded reel in project files', () => {
+  it('keeps the media it was built from, at their new ids', async () => {
+    const { reelRefs, remapReel } = await import('./projectFile');
+    const reel = {
+      input: {
+        style: 'hype' as const,
+        info: {} as never,
+        clips: [{ assetId: 'game', inPoint: 1, duration: 4 }],
+        cards: { music: 'song', logo: 'logo', players: { r1: 'p1' }, cutouts: ['p1'], depths: { ph: 'dm' } },
+      },
+      musicId: 'asset:song',
+      built: ['c1'],
+    };
+    expect(reelRefs(reel).sort()).toEqual(['dm', 'game', 'logo', 'p1', 'p1', 'ph', 'song']);
+    const r = remapReel(reel, (id) => `n_${id}`)!;
+    expect(r.input.clips[0].assetId).toBe('n_game');
+    expect(r.input.cards).toMatchObject({ music: 'n_song', logo: 'n_logo', players: { r1: 'n_p1' }, cutouts: ['n_p1'], depths: { n_ph: 'n_dm' } });
+    expect(r.musicId).toBe('asset:n_song');
+    expect(r.built).toEqual(['c1']);
+  });
+});

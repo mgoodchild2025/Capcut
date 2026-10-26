@@ -7,7 +7,7 @@ import { REEL_STYLES } from '../templates/reel';
 import { Icon } from '../ui/Icon';
 import { formatDuration, isIOS, isStandalone } from '../utils';
 
-const TILE_WORD: Record<string, string> = { recruiting: '#12', hype: '#12', spotlight: 'MVP', potw: 'POTW', team: 'TEAM', victory: 'WIN', lineup: 'LINEUP', matchup: 'VS', recap: 'SEASON', season: 'IT BEGINS', gamenight: 'TONIGHT', playoffs: 'PLAYOFFS', signup: 'JOIN' };
+const TILE_WORD: Record<string, string> = { recruiting: '#12', hype: '#12', spotlight: 'MVP', potw: 'POTW', team: 'TEAM', victory: 'WIN', lineup: 'LINEUP', matchup: 'VS', recap: 'SEASON', season: 'IT BEGINS', gamenight: 'TONIGHT', playoffs: 'PLAYOFFS', signup: 'JOIN', schedule: 'THIS WEEK', standings: 'TABLE', tournament: 'EVENT', final: 'FINAL', champions: 'CHAMPS' };
 
 export function Home() {
   const [drafts, setDrafts] = useState<DraftSummary[] | null>(null);
@@ -194,10 +194,41 @@ export function Home() {
           <h2>
             <Icon name="film" /> League promos
           </h2>
-          <p>Network-style spots for your whole league, like the season promos on sports TV: a season launch, game night, the playoffs, and registration.</p>
+          <p>Network-style spots for your whole league, like the season promos on sports TV: a season launch, this week's games, the standings, game night, the playoffs, and registration.</p>
         </div>
         <div className="tpl-cards">
-          {REEL_STYLES.filter((t) => t.subject === 'league').map((t, i) => (
+          {REEL_STYLES.filter((t) => t.subject === 'league' && !t.tournament).map((t, i) => (
+            <button
+              key={t.id}
+              className={`tpl-card tpl-${t.id}`}
+              style={{ animationDelay: `${i * 80}ms` }}
+              onClick={() => {
+                newProject(t.aspect[0], t.aspect[1]);
+                useEditor.setState({ wizard: { style: t.id }, leftTab: 'volleyball' });
+              }}
+            >
+              <span className="tpl-art" aria-hidden="true">
+                <span className={`tpl-frame ${t.aspect[0] * 5 === t.aspect[1] * 4 ? 'feed' : t.aspect[1] > t.aspect[0] ? 'tall' : 'wide'}`}>
+                  <b>{TILE_WORD[t.id]}</b>
+                  <i />
+                </span>
+              </span>
+              <strong>{t.title}</strong>
+              <small>{t.blurb}</small>
+              <span className="tpl-go">
+                Start <Icon name="chevronRight" size={16} />
+              </span>
+            </button>
+          ))}
+        </div>
+        <div className="templates-head league-head">
+          <h2>
+            <Icon name="star" /> Tournament promos
+          </h2>
+          <p>Promote an event the way the networks do: the announcement with a QR code to enter, the championship final, and the champions crowned on the podium.</p>
+        </div>
+        <div className="tpl-cards">
+          {REEL_STYLES.filter((t) => t.tournament).map((t, i) => (
             <button
               key={t.id}
               className={`tpl-card tpl-${t.id}`}

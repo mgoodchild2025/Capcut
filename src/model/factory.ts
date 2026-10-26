@@ -74,6 +74,10 @@ export const GRAPHIC_NAMES: Record<import('./types').GraphicType, string> = {
   endSlate: 'League sign-off',
   bracket: 'Playoff bracket',
   signup: 'Registration card',
+  fixtures: 'Fixtures board',
+  standings: 'Standings table',
+  eventCard: 'Event card',
+  podium: 'Podium',
 };
 
 export function createGraphicClip(graphic: import('./types').GraphicSpec, start: number, duration: number, label = '', assetId?: string): Clip {

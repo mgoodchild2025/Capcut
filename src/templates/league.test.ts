@@ -137,4 +137,65 @@ describe('league promos', () => {
     expect(punches('Rise · Fight · Win')).toEqual(['Rise', 'Fight', 'Win']);
     expect(whenParts('Fri Mar 6 · 7:30 PM · Metro Arena')).toEqual({ title: 'Fri Mar 6', sub: '7:30 PM  ·  Metro Arena' });
   });
+
+  it("boards this week's games, each with its teams, time and place", () => {
+    const games = [
+      { key: 'g1', away: 's', home: 'r', when: 'Fri 7 PM', where: 'Court 1' },
+      { key: 'g2', away: 'b', home: 'h', when: 'Sat 6 PM', where: '' },
+      { key: 'g3', away: 'w', home: 'gone', when: 'Sun', where: '' },
+    ];
+    const p = buildReel(input('schedule', { info: { ...info, league: { ...info.league!, games } } }), assets);
+    const f = graphic(p, 'fixtures')!.graphic!;
+    expect(f.teams!.map((t) => t.name)).toEqual(['Storm', 'Rockets', 'Blaze', 'Hawks']);
+    expect(f.rows).toEqual([
+      ['Fri 7 PM', 'Court 1'],
+      ['Sat 6 PM', ''],
+    ]);
+    expect(f.teams![1].logo).toBe('rLogo');
+    expect(types(p)).not.toContain('dateSlate');
+    expect(types(p).slice(-1)).toEqual(['endSlate']);
+  });
+
+  it('builds the standings in table order with records and points', () => {
+    const teams = info.league!.teams.map((t, i) => ({ ...t, record: `${9 - i}-${1 + i}`, points: String(27 - i * 3) }));
+    const p = buildReel(input('standings', { info: { ...info, league: { ...info.league!, teams } } }), assets);
+    const st = graphic(p, 'standings')!.graphic!;
+    expect(st.text.title).toBe('2026 STANDINGS');
+    expect(st.rows![0]).toEqual(['9-1', '27']);
+    expect(st.teams!.length).toBe(5);
+    expect(graphic(p, 'dateSlate')!.graphic!.text.kicker).toBe('NEXT UP');
+  });
+
+  it('announces a tournament: the event card, then entering a team', () => {
+    const p = buildReel(input('tournament', { info: { ...info, name: 'Spring Showdown', league: { ...info.league!, when: 'May 16-17', where: 'Metro Sports Complex', prize: '$2,000 prize pool', fee: '$400 per team' } } }), assets);
+    const e = graphic(p, 'eventCard')!.graphic!;
+    expect(e.text).toMatchObject({ title: 'SPRING SHOWDOWN', kicker: '2026', when: 'May 16-17', where: 'Metro Sports Complex', prize: '$2,000 prize pool', divisions: 'U14 · U16 · U18 · Open' });
+    const s2 = graphic(p, 'signup')!.graphic!;
+    expect(s2.text.title).toBe('ENTER YOUR TEAM');
+    expect(s2.rows!.map(([k]) => k)).toEqual(['Divisions', 'Dates', 'Fee', 'Register by']);
+    expect(types(p).slice(-2)).toEqual(['signup', 'endSlate']);
+    expect(p.poster).toBeGreaterThan(graphic(p, 'eventCard')!.start);
+  });
+
+  it('bills the championship final between the two finalists', () => {
+    const p = buildReel(input('final', { info: { ...info, league: { ...info.league!, prize: 'The Cup' } } }), assets);
+    const vs = graphic(p, 'versus')!.graphic!;
+    expect(vs.text).toMatchObject({ kicker: 'THE FINAL', usName: 'STORM', themName: 'ROCKETS' });
+    expect(vs.text.sub).toContain('The Cup');
+    expect(graphic(p, 'dateSlate')!.graphic!.text.kicker).toBe('CHAMPIONSHIP FINAL');
+  });
+
+  it('crowns the champions: victory, podium, MVP, sign-off', () => {
+    const p = buildReel(input('champions', { info: { ...info, league: { ...info.league!, score: '3-1', mvp: 'Jordan Lee' } } }), assets);
+    const v = graphic(p, 'victory')!.graphic!;
+    expect(v.text).toMatchObject({ title: 'CHAMPIONS', score: '3-1', sub: 'ROCKETS' });
+    expect(v.colors).toEqual(['#1d4ed8', '#fbbf24']);
+    expect(v.logo).toBe('rLogo');
+    expect(graphic(p, 'podium')!.graphic!.teams!.map((t) => t.name)).toEqual(['Rockets', 'Storm', 'Blaze']);
+    expect(p.clips.some((c) => c.graphic?.type === 'kinetic' && c.graphic.text.lines === 'MVP|Jordan Lee')).toBe(true);
+    const t = types(p);
+    expect(t.indexOf('victory')).toBeLessThan(t.indexOf('podium'));
+    expect(t.slice(-1)).toEqual(['endSlate']);
+    expect(t).not.toContain('dateSlate');
+  });
 });

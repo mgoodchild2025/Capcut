@@ -2910,6 +2910,295 @@ function drawSignup(g: G) {
   panelWipe(g, seg(t, d - 0.45, d + 0.15));
 }
 
+/** A trophy: cup, handles, stem and base, in gold (or the accent). */
+function trophy(g: G, cx: number, cy: number, size: number, color: string | CanvasGradient = accent(g)) {
+  const { ctx } = g;
+  const w = size * 0.6;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size * 0.06;
+  // Handles.
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(cx + side * w * 0.5, cy - size * 0.2, w * 0.22, size * 0.16, 0, side < 0 ? Math.PI * 0.5 : -Math.PI * 0.5, side < 0 ? Math.PI * 1.5 : Math.PI * 0.5);
+    ctx.stroke();
+  }
+  // Cup.
+  ctx.beginPath();
+  ctx.moveTo(cx - w / 2, cy - size * 0.42);
+  ctx.lineTo(cx + w / 2, cy - size * 0.42);
+  ctx.quadraticCurveTo(cx + w * 0.48, cy + size * 0.05, cx, cy + size * 0.1);
+  ctx.quadraticCurveTo(cx - w * 0.48, cy + size * 0.05, cx - w / 2, cy - size * 0.42);
+  ctx.fill();
+  // Stem and base.
+  ctx.fillRect(cx - size * 0.05, cy + size * 0.08, size * 0.1, size * 0.18);
+  ctx.fillRect(cx - w * 0.38, cy + size * 0.26, w * 0.76, size * 0.08);
+  ctx.fillRect(cx - w * 0.48, cy + size * 0.34, w * 0.96, size * 0.08);
+  // Shine.
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(cx - w * 0.18, cy - size * 0.22, w * 0.06, size * 0.14, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** This week's games: rows of matchups (teams in pairs), with when and where. */
+function drawFixtures(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const title = (spec.text.title || 'THIS WEEK').toUpperCase();
+  const top = H * (portrait ? 0.12 : 0.14);
+  headline(g, title, W / 2, top, fit(ctx, title, W * 0.8, S * 0.1), { color: '#fff', reveal: seg(t, 0.05, 0.45), sheen: seg(t, 1.6, 2.4) });
+  if (spec.text.sub) label(g, spec.text.sub.toUpperCase(), W / 2, top + S * 0.045, S * 0.026, g.c2, 'center', 800, 0.3);
+  const teams = spec.teams ?? [];
+  const games = Math.min(6, Math.floor(teams.length / 2));
+  const rows = spec.rows ?? [];
+  const areaTop0 = top + S * 0.1;
+  const rh = Math.min(S * (portrait ? 0.2 : 0.15), (H * 0.92 - areaTop0) / Math.max(1, games));
+  // The games centred in the space below the title.
+  const areaTop = areaTop0 + (H * 0.92 - areaTop0 - rh * games) * 0.4;
+  const rw = Math.min(W * 0.92, S * (portrait ? 1 : 1.6));
+  const x0 = (W - rw) / 2;
+  for (let i = 0; i < games; i++) {
+    const a = teams[i * 2];
+    const h = teams[i * 2 + 1];
+    const [when, where] = rows[i] ?? ['', ''];
+    const start = 0.4 + i * 0.18;
+    const p = eExpo(seg(t, start, start + 0.45));
+    if (p <= 0) continue;
+    const y = areaTop + i * rh;
+    ctx.save();
+    ctx.globalAlpha = p;
+    ctx.translate((i % 2 ? 1 : -1) * (1 - p) * W * 0.4, 0);
+    const plate = (x: number, w: number, c: string) => {
+      ctx.fillStyle = c;
+      para(ctx, x, y + rh * 0.08, w, rh * 0.84, rh * 0.15);
+      ctx.fill();
+    };
+    // Two team plates either side of an "at", details on the right (below, in tall frames).
+    const teamW = portrait ? rw * 0.44 : rw * 0.33;
+    const midW = portrait ? rw * 0.12 : rw * 0.06;
+    const ty = portrait ? y : y;
+    plate(x0, teamW, shade(a.colors[0], -0.2));
+    plate(x0 + teamW + midW, teamW, shade(h.colors[0], -0.2));
+    const badge = Math.min(rh * 0.6, teamW * 0.3);
+    const side = (tm: typeof a, x: number) => {
+      teamBadge(g, tm, x + badge * 0.75, ty + rh * (portrait ? 0.35 : 0.5), badge);
+      const nm = tm.name.toUpperCase();
+      headline(g, nm, x + badge * 1.4, ty + rh * (portrait ? 0.45 : 0.64), fit(ctx, nm, teamW - badge * 1.6, rh * 0.36), { align: 'left', shadow: false });
+    };
+    side(a, x0);
+    side(h, x0 + teamW + midW);
+    label(g, 'AT', x0 + teamW + midW / 2, ty + rh * 0.5, rh * 0.18, g.c2, 'center', 900, 0.2);
+    const detail = [when, where].filter(Boolean).join('  ·  ');
+    if (detail) {
+      if (portrait) label(g, detail.toUpperCase(), W / 2, y + rh * 0.78, Math.min(rh * 0.13, (rw * 0.95) / Math.max(1, detail.length * 0.6)), '#e5e7eb', 'center', 800, 0.08);
+      else {
+        const dx = x0 + teamW * 2 + midW + rw * 0.02;
+        const dw = rw - (dx - x0);
+        plate(dx, dw, 'rgba(255,255,255,0.08)');
+        label(g, (when || '').toUpperCase(), dx + rh * 0.3, y + rh * (where ? 0.38 : 0.5), Math.min(rh * 0.2, (dw * 0.9) / Math.max(1, when.length * 0.6)), '#fff', 'left', 900, 0.06);
+        if (where) label(g, where.toUpperCase(), dx + rh * 0.3, y + rh * 0.64, Math.min(rh * 0.14, (dw * 0.9) / Math.max(1, where.length * 0.62)), g.c2, 'left', 800, 0.1);
+      }
+    }
+    ctx.restore();
+  }
+  logoAt(g, spec.logo, W - S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 0.3, 0.8)));
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** The table: rank, team, record (and points), building in from the bottom, the leader in the accent. */
+function drawStandings(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const title = (spec.text.title || 'STANDINGS').toUpperCase();
+  const top = H * (portrait ? 0.12 : 0.13);
+  headline(g, title, W / 2, top, fit(ctx, title, W * 0.8, S * 0.1), { color: '#fff', reveal: seg(t, 0.05, 0.45), sheen: seg(t, 2, 2.8) });
+  const teams = (spec.teams ?? []).slice(0, 10);
+  const rows = spec.rows ?? [];
+  const areaTop = top + S * 0.07;
+  const rh = Math.min(S * 0.11, (H * 0.93 - areaTop) / Math.max(1, teams.length));
+  const rw = Math.min(W * 0.9, S * (portrait ? 0.95 : 1.35));
+  const x0 = (W - rw) / 2;
+  const n = teams.length;
+  teams.forEach((tm, i) => {
+    // Bottom of the table first, building up to the leader.
+    const start = 0.4 + (n - 1 - i) * 0.12;
+    const p = eExpo(seg(t, start, start + 0.4));
+    if (p <= 0) return;
+    const y = areaTop + i * rh;
+    const lead = i === 0;
+    ctx.save();
+    ctx.globalAlpha = p;
+    ctx.translate(0, (1 - p) * rh * 1.5);
+    ctx.fillStyle = lead ? accent(g) : i % 2 ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.1)';
+    para(ctx, x0, y + rh * 0.07, rw, rh * 0.86, rh * 0.12);
+    ctx.fill();
+    ctx.fillStyle = tm.colors[0];
+    para(ctx, x0 + rh * 0.95, y + rh * 0.07, rh * 0.07, rh * 0.86, rh * 0.12);
+    ctx.fill();
+    const ink = lead ? g.ink : '#fff';
+    headline(g, String(i + 1), x0 + rh * 0.5, y + rh * 0.68, rh * 0.5, { color: ink, shadow: false });
+    teamBadge(g, tm, x0 + rh * 1.6, y + rh * 0.5, rh * 0.66);
+    const [rec, pts] = rows[i] ?? ['', ''];
+    const nm = tm.name.toUpperCase();
+    const right = rw * (pts ? 0.32 : 0.2);
+    headline(g, nm, x0 + rh * 2.1, y + rh * 0.66, fit(ctx, nm, rw - rh * 2.2 - right, rh * 0.42), { align: 'left', color: ink, shadow: false });
+    if (rec) headline(g, rec, x0 + rw - (pts ? rw * 0.16 : rh * 0.4), y + rh * 0.66, rh * 0.42, { align: 'right', color: ink, shadow: false });
+    if (pts) headline(g, pts, x0 + rw - rh * 0.4, y + rh * 0.66, rh * 0.42, { align: 'right', color: lead ? ink : g.c2, shadow: false });
+    ctx.restore();
+  });
+  if (n && (rows[0]?.[0] || rows[0]?.[1])) {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 0.4, 0.8));
+    if (rows.some((r) => r[1])) {
+      label(g, 'W-L', x0 + rw - rw * 0.16, areaTop - S * 0.015, S * 0.02, 'rgba(255,255,255,0.6)', 'right', 800, 0.2);
+      label(g, 'PTS', x0 + rw - rh * 0.4, areaTop - S * 0.015, S * 0.02, 'rgba(255,255,255,0.6)', 'right', 800, 0.2);
+    } else label(g, 'W-L', x0 + rw - rh * 0.4, areaTop - S * 0.015, S * 0.02, 'rgba(255,255,255,0.6)', 'right', 800, 0.2);
+    ctx.restore();
+  }
+  logoAt(g, spec.logo, W - S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 0.3, 0.8)));
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** A tournament announced: its name with the trophy, when and where, the divisions, the prize. */
+function drawEventCard(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const name = (spec.text.title || 'TOURNAMENT').toUpperCase();
+  const kicker = (spec.text.kicker || '').toUpperCase();
+  const cy = H * (portrait ? 0.3 : 0.27);
+  const tp = eBack(seg(t, 0.15, 0.7));
+  if (tp > 0) trophy(g, W / 2, cy - S * 0.02 - (1 - tp) * S * 0.1, S * (portrait ? 0.26 : 0.22));
+  if (kicker) label(g, kicker, W / 2, cy + S * 0.15, S * 0.03, g.c2, 'center', 800, 0.35);
+  const ns = fit(ctx, name, W * 0.88, S * (portrait ? 0.13 : 0.12));
+  let y = cy + S * 0.18 + ns * 0.85;
+  headline(g, name, W / 2, y, ns, { color: '#fff', reveal: seg(t, 0.45, 0.85), sheen: seg(t, 1.6, 2.4) });
+  y += ns * 0.5;
+  const lines = [spec.text.when, spec.text.where].filter((x): x is string => !!x?.trim());
+  lines.forEach((ln, i) => {
+    ctx.save();
+    ctx.globalAlpha = eOut(seg(t, 0.9 + i * 0.15, 1.3 + i * 0.15));
+    label(g, ln.toUpperCase(), W / 2, y + S * 0.045 + i * S * 0.06, Math.min(S * (i ? 0.032 : 0.042), (W * 0.9) / Math.max(1, ln.length * 0.6)), i ? '#e5e7eb' : '#fff', 'center', 800, 0.12);
+    ctx.restore();
+  });
+  y += S * 0.06 * lines.length + S * 0.06;
+  // Divisions as chips.
+  const chips = (spec.text.divisions || '')
+    .split(/·|,|\|/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  if (chips.length) {
+    const cs = S * 0.03;
+    font(ctx, cs, 800, SANS);
+    const widths = chips.map((c) => ctx.measureText(c.toUpperCase()).width + cs * 1.6);
+    const gap = cs * 0.5;
+    // Wrap into rows that fit.
+    const rowsOf: number[][] = [[]];
+    let rowW = 0;
+    widths.forEach((w, i) => {
+      if (rowW + w > W * 0.88 && rowsOf[rowsOf.length - 1].length) {
+        rowsOf.push([]);
+        rowW = 0;
+      }
+      rowsOf[rowsOf.length - 1].push(i);
+      rowW += w + gap;
+    });
+    rowsOf.forEach((row, r) => {
+      const total = row.reduce((s2, i) => s2 + widths[i] + gap, -gap);
+      let x = W / 2 - total / 2;
+      row.forEach((i) => {
+        const p = eBack(seg(t, 1.3 + i * 0.08, 1.7 + i * 0.08));
+        if (p > 0) {
+          ctx.save();
+          ctx.translate(x + widths[i] / 2, y + r * cs * 2.2);
+          ctx.scale(p, p);
+          ctx.fillStyle = 'rgba(255,255,255,0.12)';
+          ctx.strokeStyle = rgba(g.c2, 0.8);
+          ctx.lineWidth = Math.max(1.5, cs * 0.08);
+          ctx.beginPath();
+          ctx.roundRect(-widths[i] / 2, -cs * 0.85, widths[i], cs * 1.7, cs * 0.85);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+          if (p > 0.6) label(g, chips[i].toUpperCase(), x + widths[i] / 2, y + r * cs * 2.2, cs, '#fff', 'center', 800, 0.08);
+        }
+        x += widths[i] + gap;
+      });
+    });
+    y += rowsOf.length * cs * 2.2 + S * 0.02;
+  }
+  const prize = spec.text.prize || '';
+  if (prize) {
+    const ps = Math.min(S * 0.05, (W * 0.8) / Math.max(1, prize.length * 0.5));
+    font(ctx, ps, 900);
+    const pw = ctx.measureText(prize.toUpperCase()).width + ps * 1.6;
+    const pp = eExpo(seg(t, 1.8, 2.2));
+    ctx.save();
+    ctx.fillStyle = accent(g);
+    para(ctx, W / 2 - (pw * pp) / 2, y + S * 0.02, pw * pp, ps * 1.35, ps * 0.3);
+    ctx.fill();
+    ctx.restore();
+    if (pp > 0.7) headline(g, prize.toUpperCase(), W / 2, y + S * 0.02 + ps * 1.08, ps, { color: g.ink, shadow: false });
+  }
+  logoAt(g, spec.logo, W - S * 0.1, S * 0.1, S * 0.12, eOut(seg(t, 0.3, 0.8)));
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
+/** The podium: second, first and third rise in their colours, the trophy over the winners. */
+function drawPodium(g: G) {
+  const { ctx, W, H, S, t, d, portrait, spec } = g;
+  backdrop(g);
+  const title = (spec.text.title || 'THE PODIUM').toUpperCase();
+  const top = H * (portrait ? 0.12 : 0.13);
+  headline(g, title, W / 2, top, fit(ctx, title, W * 0.8, S * 0.1), { color: '#fff', reveal: seg(t, 0.05, 0.45) });
+  const teams = (spec.teams ?? []).slice(0, 3);
+  // Left to right: 2nd, 1st, 3rd.
+  const order = [1, 0, 2].filter((i) => teams[i]);
+  const base = H * 0.9;
+  const colW = Math.min(W * 0.28, S * 0.3);
+  const heights = [S * 0.34, S * 0.24, S * 0.17];
+  order.forEach((place, k) => {
+    const tm = teams[place];
+    const cx = W / 2 + (k - (order.length - 1) / 2) * colW * 1.06;
+    const start = place === 0 ? 1.2 : place === 1 ? 0.7 : 0.4;
+    const p = eOut(seg(t, start, start + 0.6));
+    if (p <= 0) return;
+    const h = heights[place] * p;
+    ctx.save();
+    const gr = ctx.createLinearGradient(0, base - h, 0, base);
+    gr.addColorStop(0, shade(tm.colors[0], 0.05));
+    gr.addColorStop(1, shade(tm.colors[0], -0.5));
+    ctx.fillStyle = gr;
+    ctx.fillRect(cx - colW / 2, base - h, colW, h);
+    ctx.fillStyle = tm.colors[1];
+    ctx.fillRect(cx - colW / 2, base - h, colW, S * 0.012);
+    ctx.restore();
+    headline(g, String(place + 1), cx, base - h + Math.min(h, heights[place]) * 0.62, Math.min(heights[place] * 0.5, colW * 0.5), { color: 'rgba(255,255,255,0.85)', shadow: false });
+    const bp = eBack(seg(t, start + 0.4, start + 0.8));
+    if (bp > 0) {
+      const bs = colW * (place === 0 ? 0.62 : 0.5);
+      ctx.save();
+      ctx.translate(cx, base - h - bs * 0.62);
+      ctx.scale(bp, bp);
+      teamBadge(g, tm, 0, 0, bs);
+      ctx.restore();
+      const nm = tm.name.toUpperCase();
+      label(g, nm, cx, base - h - bs * 1.3, Math.min(S * 0.04, (colW * 1.05) / Math.max(1, nm.length * 0.62)), '#fff', 'center', 900, 0.06);
+    }
+    // The trophy over the winners' name.
+    if (place === 0) {
+      const tp = eBack(seg(t, 2, 2.5));
+      if (tp > 0) trophy(g, cx, base - heights[0] - colW * 0.62 * 1.3 - S * 0.1, S * 0.12 * tp);
+    }
+  });
+  if (g.look !== 'classic' && teams.length) confetti(g, 1.9, LITE ? 40 : 90);
+  panelWipe(g, seg(t, d - 0.45, d + 0.15));
+}
+
 const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   open: drawOpen,
   stinger: drawStinger,
@@ -2936,10 +3225,14 @@ const DRAW: Record<GraphicSpec['type'], (g: G) => void> = {
   endSlate: drawEndSlate,
   bracket: drawBracket,
   signup: drawSignup,
+  fixtures: drawFixtures,
+  standings: drawStandings,
+  eventCard: drawEventCard,
+  podium: drawPodium,
 };
 
 /** Graphics that fill the whole frame (the rest are overlays). */
-export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit', 'summary', 'logoWall', 'dateSlate', 'endSlate', 'bracket', 'signup'];
+export const FULL_FRAME: GraphicSpec['type'][] = ['open', 'playerCard', 'stats', 'roster', 'final', 'closer', 'versus', 'victory', 'potw', 'commit', 'summary', 'logoWall', 'dateSlate', 'endSlate', 'bracket', 'signup', 'fixtures', 'standings', 'eventCard', 'podium'];
 
 /** Draws `clip`'s graphic at clip-local time `local` into a W x H frame. */
 export function drawGraphic(ctx: CanvasRenderingContext2D, clip: Clip, local: number, W: number, H: number, img: ImageLookup, media: CanvasImageSource | null, lite = false) {

@@ -3,7 +3,7 @@ import type { SportId } from './sports';
 import { buildBroadcastReel } from './broadcast';
 import { buildLeaguePromo, isLeagueStyle } from './league';
 
-export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'potw' | 'team' | 'victory' | 'lineup' | 'matchup' | 'season' | 'gamenight' | 'playoffs' | 'signup';
+export type ReelStyle = 'recruiting' | 'hype' | 'recap' | 'spotlight' | 'potw' | 'team' | 'victory' | 'lineup' | 'matchup' | 'season' | 'gamenight' | 'playoffs' | 'signup' | 'schedule' | 'standings' | 'tournament' | 'final' | 'champions';
 
 /** Which wizard steps a style uses and what it's about. */
 export type ReelSubject = 'player' | 'team' | 'league';
@@ -21,6 +21,8 @@ export const REEL_STYLES: {
   spotlight?: boolean;
   /** Introduces the opponent's starters too. */
   opponents?: boolean;
+  /** League promos for a tournament (grouped apart from the league's). */
+  tournament?: boolean;
 }[] = [
   {
     id: 'recruiting',
@@ -136,6 +138,49 @@ export const REEL_STYLES: {
     music: 'rhythm-factory',
     subject: 'league',
   },
+  {
+    id: 'schedule',
+    title: 'This week',
+    blurb: "The week's big games on one board: who plays whom, when and where.",
+    aspect: [1920, 1080],
+    music: 'let-the-games-begin',
+    subject: 'league',
+  },
+  {
+    id: 'standings',
+    title: 'Standings',
+    blurb: 'The race for first: the table builds in, the leader on top, every game counting.',
+    aspect: [1920, 1080],
+    music: 'black-diamond',
+    subject: 'league',
+  },
+  {
+    id: 'tournament',
+    title: 'Tournament',
+    blurb: 'Announce the event: when, where, the divisions and the prize, and a QR code to enter a team.',
+    aspect: [1920, 1080],
+    music: 'twists',
+    subject: 'league',
+    tournament: true,
+  },
+  {
+    id: 'final',
+    title: 'Championship final',
+    blurb: 'Two teams, one trophy: the finalists face off, then when the final starts.',
+    aspect: [1920, 1080],
+    music: 'great-mission',
+    subject: 'league',
+    tournament: true,
+  },
+  {
+    id: 'champions',
+    title: 'Champions',
+    blurb: 'Crown the winners: the champions with confetti, the podium, the MVP and the sign-off.',
+    aspect: [1920, 1080],
+    music: 'fever-stadium',
+    subject: 'league',
+    tournament: true,
+  },
 ];
 
 
@@ -216,6 +261,8 @@ export interface LeagueTeam {
   /** Logo as a PNG data URL. */
   logo?: string;
   record?: string;
+  /** Standings points. */
+  points?: string;
 }
 
 /** What a league promo says beyond the league's name, logo and colours. */
@@ -237,6 +284,22 @@ export interface LeagueDetails {
   divisions?: string;
   deadline?: string;
   fee?: string;
+  /** This week's games. */
+  games?: LeagueGame[];
+  /** A tournament's prize: "$2,000 prize pool", "Trophy and medals". */
+  prize?: string;
+  /** Champions: the final's score and the tournament's MVP. */
+  score?: string;
+  mvp?: string;
+}
+
+/** A game on the schedule: two teams by key, when and where. */
+export interface LeagueGame {
+  key: string;
+  away: string;
+  home: string;
+  when: string;
+  where: string;
 }
 
 export interface ReelClip {

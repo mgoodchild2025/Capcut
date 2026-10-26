@@ -27,6 +27,11 @@ const LOOK: Record<ReelStyle, { beat: boolean; slowMo: boolean; transitions: Tra
   // The play at full speed with the crowd, then the replays carry it.
   potw: { beat: false, slowMo: false, transitions: ['none'], stingerEvery: 0, volume: 0.6, musicVolume: 0.6, hold: 1.2 },
   recap: { beat: false, slowMo: false, transitions: ['dissolve'], stingerEvery: 0, volume: 0.35, musicVolume: 0.75, hold: 0 },
+  // League promos are cut by their own builder (templates/league.ts).
+  season: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  gamenight: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  playoffs: { beat: true, slowMo: true, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
+  signup: { beat: true, slowMo: false, transitions: ['flash'], stingerEvery: 0, volume: 0.1, musicVolume: 0.95, hold: 0 },
 };
 
 const STINGER = 0.8;

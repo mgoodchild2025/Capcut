@@ -4,6 +4,7 @@ import type { GraphicLook } from '../model/types';
 import type { ReelInfo } from '../templates/reel';
 import { useEditor } from '../store';
 import { Icon } from '../ui/Icon';
+import { LeagueForm } from './LeagueForm';
 import { ColorPairs, loadInfo, LOOKS, LogoDrop, MusicStep, styleOf } from './ReelWizard';
 
 /**
@@ -71,40 +72,44 @@ function Recorded({ onDone }: { onDone: () => void }) {
   return (
     <>
       <div className="wiz-body rs-body">
-        <p className="wiz-lede">
-          Changes go to every title and card in this {style.title.toLowerCase()} reel. Anything you've typed over by hand stays as you left it.
-        </p>
-        <div className="player-form">
-          <label className="wiz-field span2">
-            <span>{team ? 'Team name' : 'Player name'}</span>
-            <input value={info.name} onChange={(e) => set({ name: e.target.value })} />
-          </label>
-          {!team && field('number', 'Number', '12')}
-          {!team && field('position', 'Position', 'Outside Hitter')}
-          {field('club', team ? 'Club' : 'Club or team', 'Rockets 17 Elite')}
-          {!team && field('school', 'School', 'Lincoln High')}
-          {field('opponent', 'Opponent', 'Westside Storm')}
-          {team && field('record', 'Record', '24-6')}
-          {!team && field('headline', 'Headline', 'Player of the Game')}
-          <label className="wiz-field span2">
-            <span>Graphics look</span>
-            <select value={info.look ?? 'broadcast'} onChange={(e) => set({ look: e.target.value as GraphicLook })}>
-              {LOOKS.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}: {l.hint}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <h4 className="wiz-sub">Team colours</h4>
-        <ColorPairs value={info.colors} onChange={(colors) => set({ colors })} label="Team" />
-        <h4 className="wiz-sub">Logos</h4>
-        <div className="rs-logos">
-          <LogoDrop value={info.logo} onChange={(logo) => set({ logo })} label="team logo" />
-          <LogoDrop value={info.oppLogo} onChange={(oppLogo) => set({ oppLogo })} label="opponent logo" />
-          <small className="muted">Your team's logo, then the opponent's.</small>
-        </div>
+        <p className="wiz-lede">Changes go to every title and card in this {style.title.toLowerCase()} reel. Anything you've typed over by hand stays as you left it.</p>
+        {style.subject === 'league' ? (
+          <LeagueForm info={info} setInfo={setInfo} style={rec.input.style} format={false} />
+        ) : (
+          <>
+            <div className="player-form">
+              <label className="wiz-field span2">
+                <span>{team ? 'Team name' : 'Player name'}</span>
+                <input value={info.name} onChange={(e) => set({ name: e.target.value })} />
+              </label>
+              {!team && field('number', 'Number', '12')}
+              {!team && field('position', 'Position', 'Outside Hitter')}
+              {field('club', team ? 'Club' : 'Club or team', 'Rockets 17 Elite')}
+              {!team && field('school', 'School', 'Lincoln High')}
+              {field('opponent', 'Opponent', 'Westside Storm')}
+              {team && field('record', 'Record', '24-6')}
+              {!team && field('headline', 'Headline', 'Player of the Game')}
+              <label className="wiz-field span2">
+                <span>Graphics look</span>
+                <select value={info.look ?? 'broadcast'} onChange={(e) => set({ look: e.target.value as GraphicLook })}>
+                  {LOOKS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}: {l.hint}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <h4 className="wiz-sub">Team colours</h4>
+            <ColorPairs value={info.colors} onChange={(colors) => set({ colors })} label="Team" />
+            <h4 className="wiz-sub">Logos</h4>
+            <div className="rs-logos">
+              <LogoDrop value={info.logo} onChange={(logo) => set({ logo })} label="team logo" />
+              <LogoDrop value={info.oppLogo} onChange={(oppLogo) => set({ oppLogo })} label="opponent logo" />
+              <small className="muted">Your team's logo, then the opponent's.</small>
+            </div>
+          </>
+        )}
         <h4 className="wiz-sub">Music</h4>
         <MusicStep musicId={musicId} setMusicId={setMusicId} style={rec.input.style} heading={false} />
         {songChanged && musicId && (
@@ -154,7 +159,10 @@ function Loose({ onDone }: { onDone: () => void }) {
   const [logo, setLogo] = useState<string | undefined>(undefined);
   const [musicId, setMusicId] = useState<string | null | undefined>(undefined);
   const [replace, setReplace] = useState<[string, string][]>(() => {
-    const words = project.clips.flatMap((c) => Object.values(c.graphic?.text ?? {})).join(' ').toLowerCase();
+    const words = project.clips
+      .flatMap((c) => Object.values(c.graphic?.text ?? {}))
+      .join(' ')
+      .toLowerCase();
     // Start from the names last used in a reel, where the titles show them.
     return [saved.name, saved.club, saved.opponent]
       .map((w) => w?.trim())
@@ -162,7 +170,12 @@ function Loose({ onDone }: { onDone: () => void }) {
       .map((w) => [w, w] as [string, string])
       .concat([['', '']]);
   });
-  const changed = colors !== (first?.colors ?? saved.colors) || look !== (first?.look ?? 'broadcast') || !!logo || musicId !== undefined || replace.some(([a, b]) => a.trim() && a.trim() !== b.trim());
+  const changed =
+    colors !== (first?.colors ?? saved.colors) ||
+    look !== (first?.look ?? 'broadcast') ||
+    !!logo ||
+    musicId !== undefined ||
+    replace.some(([a, b]) => a.trim() && a.trim() !== b.trim());
   const apply = async () => {
     if (await applyLooseReelSettings({ colors, look, logo, musicId, replace })) onDone();
   };
@@ -174,9 +187,26 @@ function Loose({ onDone }: { onDone: () => void }) {
         <div className="rs-replace">
           {replace.map(([from, to], i) => (
             <div key={i} className="rs-replace-row">
-              <input className="text-input" aria-label="Replace" placeholder="Old name" value={from} onChange={(e) => setReplace((r) => [...r.map((x, j): [string, string] => (j === i ? [e.target.value, x[1]] : x)), ...(i === r.length - 1 && e.target.value ? [['', ''] as [string, string]] : [])])} />
+              <input
+                className="text-input"
+                aria-label="Replace"
+                placeholder="Old name"
+                value={from}
+                onChange={(e) =>
+                  setReplace((r) => [
+                    ...r.map((x, j): [string, string] => (j === i ? [e.target.value, x[1]] : x)),
+                    ...(i === r.length - 1 && e.target.value ? [['', ''] as [string, string]] : []),
+                  ])
+                }
+              />
               <Icon name="chevronRight" size={14} />
-              <input className="text-input" aria-label="With" placeholder="New name" value={to} onChange={(e) => setReplace((r) => r.map((x, j): [string, string] => (j === i ? [x[0], e.target.value] : x)))} />
+              <input
+                className="text-input"
+                aria-label="With"
+                placeholder="New name"
+                value={to}
+                onChange={(e) => setReplace((r) => r.map((x, j): [string, string] => (j === i ? [x[0], e.target.value] : x)))}
+              />
             </div>
           ))}
         </div>

@@ -66,6 +66,14 @@ export const GRAPHIC_NAMES: Record<import('./types').GraphicType, string> = {
   badge: 'Award badge',
   commit: 'Commitment',
   summary: 'Game summary',
+  kinetic: 'Kinetic type',
+  letterbox: 'Letterbox',
+  glitch: 'Glitch hit',
+  logoWall: 'Team logo wall',
+  dateSlate: 'Date slate',
+  endSlate: 'League sign-off',
+  bracket: 'Playoff bracket',
+  signup: 'Registration card',
 };
 
 export function createGraphicClip(graphic: import('./types').GraphicSpec, start: number, duration: number, label = '', assetId?: string): Clip {
